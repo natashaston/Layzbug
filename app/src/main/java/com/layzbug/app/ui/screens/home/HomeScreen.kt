@@ -30,6 +30,7 @@ fun HomeScreen(
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
 
+
     val yearlyWalks by viewModel.yearlyWalks.collectAsState(initial = StatsValue(0, "Yearly"))
     val januaryWalks by viewModel.januaryWalks.collectAsState(initial = StatsValue(0, "January"))
     val weeklyDays by viewModel.weeklyDays.collectAsState(initial = emptyList())

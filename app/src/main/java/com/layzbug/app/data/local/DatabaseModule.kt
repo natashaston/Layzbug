@@ -2,6 +2,7 @@ package com.layzbug.app.di
 
 import androidx.room.Room
 import android.content.Context
+import androidx.health.connect.client.HealthConnectClient
 import com.layzbug.app.FitSyncManager
 import com.layzbug.app.data.local.AppDatabase
 import com.layzbug.app.data.local.WalkDao
@@ -40,7 +41,9 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideFitSyncManager(@ApplicationContext context: Context): FitSyncManager {
-        return FitSyncManager(context)
+    fun provideFitSyncManager(healthConnectClient: HealthConnectClient): FitSyncManager {
+        // No more 'as HealthConnectClient' cast!
+        // Hilt provides the real client from your HealthModule.
+        return FitSyncManager(healthConnectClient)
     }
 }
