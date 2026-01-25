@@ -4,7 +4,7 @@ import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.request.AggregateGroupByDurationRequest // Change here
+import androidx.health.connect.client.request.AggregateGroupByDurationRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Duration
@@ -17,6 +17,19 @@ import javax.inject.Singleton
 class FitSyncManager @Inject constructor(
     private val healthConnectClient: HealthConnectClient
 ) {
+    /**
+     * Checks if the set of required permissions is already granted.
+     */
+    suspend fun hasPermissions(permissions: Set<String>): Boolean {
+        return try {
+            val granted = healthConnectClient.permissionController.getGrantedPermissions()
+            granted.containsAll(permissions)
+        } catch (e: Exception) {
+            Log.e("FitSync", "Error checking permissions: ${e.message}")
+            false
+        }
+    }
+
     suspend fun checkWalkingGoal(date: LocalDate): Boolean {
         try {
             val startTime = date.atStartOfDay().toInstant(ZoneOffset.UTC)
@@ -30,7 +43,10 @@ class FitSyncManager @Inject constructor(
                     timeRangeFilter = timeRange
                 )
             )
-            if (sessionResponse.records.any { Duration.between(it.startTime, it.endTime).toMinutes() >= 30 }) {
+
+            if (sessionResponse.records.any {
+                    Duration.between(it.startTime, it.endTime).toMinutes() >= 30
+                }) {
                 return true
             }
 
@@ -39,24 +55,26 @@ class FitSyncManager @Inject constructor(
                 AggregateGroupByDurationRequest(
                     metrics = setOf(StepsRecord.COUNT_TOTAL),
                     timeRangeFilter = timeRange,
-                    timeRangeSlicer = Duration.ofMinutes(1) // Duration works here!
+                    timeRangeSlicer = Duration.ofMinutes(1)
                 )
             )
 
             var continuousMinutes = 0
             var gapMinutes = 0
-            val maxAllowedGap = 4 // Your 3-minute traffic stops are safe
+            val maxAllowedGap = 4 // Covers 3-minute traffic stops
 
             for (bucket in response) {
                 val stepsInMinute = bucket.result[StepsRecord.COUNT_TOTAL] ?: 0L
 
                 if (stepsInMinute >= 40) {
+                    // Add the current minute plus any gap minutes we "saved"
                     continuousMinutes += (1 + gapMinutes)
                     gapMinutes = 0
 
                     if (continuousMinutes >= 30) return true
                 } else {
                     gapMinutes++
+                    // If stop is longer than 4 mins (traffic light), reset the streak
                     if (gapMinutes > maxAllowedGap) {
                         continuousMinutes = 0
                         gapMinutes = 0

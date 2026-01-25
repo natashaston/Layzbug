@@ -9,14 +9,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.health.connect.client.HealthConnectClient
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.layzbug.app.ui.screens.home.HomeScreen
+import com.layzbug.app.ui.screens.home.HomeViewModel
 import com.layzbug.app.ui.screens.HistoryScreen
 import com.layzbug.app.ui.screens.MonthDetailScreen
 import com.layzbug.app.ui.screens.PermissionScreen
+import com.layzbug.app.ui.screens.SplashScreen
 import com.layzbug.app.ui.theme.Surface
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,14 +30,19 @@ fun LayzbugNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Initialize HealthConnectClient for the Permission Screen
+    // HealthConnectClient instance
     val healthConnectClient = HealthConnectClient.getOrCreate(context)
+
+    // Injecting the ViewModel at the NavHost level so it can be shared
+    val homeViewModel: HomeViewModel = hiltViewModel()
 
     Scaffold(
         containerColor = Surface,
         topBar = {
-            // Only show TopBar if we are NOT on the permission screen
-            if (currentRoute != Routes.Permission.route) {
+            // Hide TopBar on Splash and Permission screens for a cleaner look
+            val isEntryScreen = currentRoute == "splash" || currentRoute == Routes.Permission.route
+
+            if (!isEntryScreen) {
                 TopAppBar(
                     title = {
                         Text(
@@ -47,6 +55,7 @@ fun LayzbugNavHost() {
                         )
                     },
                     navigationIcon = {
+                        // Show back button only if we aren't on Home
                         if (currentRoute != "home" && currentRoute != null) {
                             IconButton(onClick = { navController.popBackStack() }) {
                                 Icon(
@@ -68,11 +77,27 @@ fun LayzbugNavHost() {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            // Changed startDestination to "permission" to trigger the flow
-            startDestination = Routes.Permission.route,
+            startDestination = "splash", // App always starts here to check sync/perms
             modifier = Modifier.padding(innerPadding)
         ) {
-            // New Permission Screen Route
+            // 1. Splash Logic
+            composable("splash") {
+                SplashScreen(
+                    viewModel = homeViewModel,
+                    onNavigateToPermissions = {
+                        navController.navigate(Routes.Permission.route) {
+                            popUpTo("splash") { inclusive = true }
+                        }
+                    },
+                    onSyncComplete = {
+                        navController.navigate("home") {
+                            popUpTo("splash") { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // 2. Permission Screen (The FAB screen)
             composable(Routes.Permission.route) {
                 PermissionScreen(
                     navController = navController,
@@ -80,6 +105,7 @@ fun LayzbugNavHost() {
                 )
             }
 
+            // 3. Home Screen
             composable("home") {
                 HomeScreen(
                     onNavigateToHistory = { navController.navigate("history") },
@@ -87,6 +113,7 @@ fun LayzbugNavHost() {
                 )
             }
 
+            // 4. History Screen
             composable("history") {
                 HistoryScreen(
                     onBack = { navController.popBackStack() },
@@ -96,6 +123,7 @@ fun LayzbugNavHost() {
                 )
             }
 
+            // 5. Month Details
             composable("details") {
                 MonthDetailScreen(
                     onBack = { navController.popBackStack() }
