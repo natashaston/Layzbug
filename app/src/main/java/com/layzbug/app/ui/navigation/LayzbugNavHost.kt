@@ -51,7 +51,7 @@ fun LayzbugNavHost() {
                                 "history" -> "History"
                                 else -> "Layzbug"
                             },
-                            style = MaterialTheme.typography.headlineMedium
+                            style = MaterialTheme.typography.titleMedium
                         )
                     },
                     navigationIcon = {
