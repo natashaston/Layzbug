@@ -12,7 +12,7 @@ import com.layzbug.app.ui.components.CalendarGrid
 import com.layzbug.app.ui.components.EditWalkStatusBottomSheet
 import com.layzbug.app.ui.components.StatsCardPill
 import com.layzbug.app.ui.theme.Dimens
-import com.layzbug.app.ui.theme.Surface
+import com.layzbug.app.ui.theme.SurfaceColor
 import com.layzbug.app.data.viewmodel.MonthViewModel
 import java.time.YearMonth
 
@@ -40,7 +40,7 @@ fun MonthDetailScreen(
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Surface).padding(horizontal = 16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(SurfaceColor).padding(horizontal = 16.dp)) {
         StatsCardPill(
             stats = monthStats,
             onClick = { },

@@ -10,106 +10,140 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.layzbug.app.R
 
+// --- Font Family Definitions ---
+
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
-private val DisplayRobotoFlex = FontFamily(
+val DisplayRobotoFlex = FontFamily(
     Font(
-        resId = R.font.roboto_flex, // variable TTF
+        resId = R.font.roboto_flex,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(560),      // Figma weight
-            FontVariation.width(55f),       // Figma Width
-            FontVariation.slant(-10f),      // Figma Slant
-            FontVariation.Setting("opsz", 36f) // Figma Optical size
+            FontVariation.weight(600),
+            FontVariation.width(55f),
+            FontVariation.slant(-10f),
+            FontVariation.Setting("opsz", 80f)
         )
     )
 )
 
-// Roboto Flex (variable font)
-val RobotoFlex = FontFamily(
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val GoogleSansFlexMedium = FontFamily(
     Font(
-        resId = R.font.roboto_flex,
-        weight = FontWeight.W400
-    ),
-    Font(
-        resId = R.font.roboto_flex,
-        weight = FontWeight.W600
+        resId = R.font.google_sans_flex,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(500),
+            FontVariation.Setting("opsz", 32f)
+        )
     )
 )
 
-// Google Sans Flex (variable font)
-val GoogleSansFlex = FontFamily(
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val GoogleSansFlexRegular = FontFamily(
     Font(
         resId = R.font.google_sans_flex,
-        weight = FontWeight.W400
-    ),
-    Font(
-        resId = R.font.google_sans_flex,
-        weight = FontWeight.W500
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(400),
+            FontVariation.Setting("opsz", 20f)
+        )
     )
 )
+
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val RobotoFlexRegular = FontFamily(
+    Font(
+        resId = R.font.roboto_flex,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(400),
+            FontVariation.Setting("opsz", 14f)
+        )
+    )
+)
+
+// Public aliases to fix "Unresolved reference" errors in external files
+val GoogleSansFlex = GoogleSansFlexRegular
+val RobotoFlex = RobotoFlexRegular
+
+// --- Typography Theme ---
 
 val AppTypography = Typography(
-
+    // title-80-semibold (Figma: 365)
     displayLarge = TextStyle(
-        fontFamily = DisplayRobotoFlex,   // ← use the configured variable font
-        fontWeight = FontWeight(570),
+        fontFamily = DisplayRobotoFlex,
+        fontWeight = FontWeight.W600,
         fontSize = 80.sp,
         lineHeight = 94.sp,
-        letterSpacing = -0.75.sp,
-        fontFeatureSettings = "tnum",
+        letterSpacing = 0.sp,
         textAlign = TextAlign.Center
     ),
 
-    bodySmall = TextStyle(
-        fontFamily = RobotoFlex,
-        fontWeight = FontWeight(400),
-        fontSize = 14.sp,
-        lineHeight = 20.sp
-    ),
-
+    // title-32-medium (Figma: Hey Layzbug)
     headlineLarge = TextStyle(
-        fontFamily = GoogleSansFlex,
-        fontWeight = FontWeight(500),
+        fontFamily = GoogleSansFlexMedium,
+        fontWeight = FontWeight.W500,
         fontSize = 32.sp,
-        lineHeight = 40.sp
+        lineHeight = 40.sp,
+        letterSpacing = 0.sp
     ),
+
+    // title-20-medium (Figma: Log your walks)
     headlineMedium = TextStyle(
-        fontFamily = GoogleSansFlex,
-        fontWeight = FontWeight(500),
+        fontFamily = GoogleSansFlexMedium,
+        fontWeight = FontWeight.W500,
         fontSize = 20.sp,
-        lineHeight = 28.sp
+        lineHeight = 28.sp,
+        letterSpacing = 0.sp
     ),
+
+    // title-16-medium (Figma: Walked)
     headlineSmall = TextStyle(
-        fontFamily = GoogleSansFlex,
-        fontWeight = FontWeight(500),
+        fontFamily = GoogleSansFlexMedium,
+        fontWeight = FontWeight.W500,
         fontSize = 16.sp,
-        lineHeight = 24.sp
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp
     ),
 
+    // title-24-regular (Figma: January 16)
     titleLarge = TextStyle(
-        fontFamily = GoogleSansFlex,
-        fontWeight = FontWeight(400),
+        fontFamily = GoogleSansFlexRegular,
+        fontWeight = FontWeight.W400,
         fontSize = 24.sp,
-        lineHeight = 32.sp
+        lineHeight = 32.sp,
+        letterSpacing = 0.sp
     ),
 
+    // title-22-regular (Figma: Layzbug)
     titleMedium = TextStyle(
-        fontFamily = GoogleSansFlex,
-        fontWeight = FontWeight(400),
+        fontFamily = GoogleSansFlexRegular,
+        fontWeight = FontWeight.W400,
         fontSize = 22.sp,
-        lineHeight = 28.sp
+        lineHeight = 28.sp,
+        letterSpacing = 0.sp
     ),
 
+    // title-14-regular (Figma: Feb)
     titleSmall = TextStyle(
-        fontFamily = GoogleSansFlex,
-        fontWeight = FontWeight(400),
+        fontFamily = GoogleSansFlexRegular,
+        fontWeight = FontWeight.W400,
         fontSize = 14.sp,
-        lineHeight = 20.sp
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp
     ),
 
+    // body-large (Figma: Walks in January)
     bodyLarge = TextStyle(
-        fontFamily = GoogleSansFlex,
-        fontWeight = FontWeight(400),
+        fontFamily = GoogleSansFlexRegular,
+        fontWeight = FontWeight.W400,
         fontSize = 16.sp,
-        lineHeight = 24.sp
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp
     ),
+
+    // body-small (Figma: Progress text)
+    bodySmall = TextStyle(
+        fontFamily = RobotoFlexRegular,
+        fontWeight = FontWeight.W400,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp
+    )
 )

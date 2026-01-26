@@ -1,69 +1,91 @@
 package com.layzbug.app.ui.screens
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme // Ensure this is here
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue // Vital for the 'by' delegate
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.layzbug.app.R
 import com.layzbug.app.ui.screens.home.HomeViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import com.layzbug.app.ui.theme.OnSurfaceVariant
 
 @Composable
 fun SplashScreen(
     viewModel: HomeViewModel,
     onNavigateToPermissions: () -> Unit,
-    onSyncComplete: () -> Unit // Match the name used in your NavHost
+    onSyncComplete: () -> Unit
 ) {
-    // Collect the StateFlow from the ViewModel
     val isSyncing by viewModel.isSyncing.collectAsState()
+    val alpha = remember { Animatable(0f) }
 
-    // 1. Initial Check: Run once on launch
     LaunchedEffect(Unit) {
-        val hasPerms = viewModel.checkPermissions()
-        if (!hasPerms) {
-            onNavigateToPermissions()
+        // Animation runs in parallel with the sync check
+        alpha.animateTo(1f, animationSpec = tween(500))
+
+        val startTime = System.currentTimeMillis()
+
+        snapshotFlow { isSyncing }.collectLatest { syncing ->
+            // Only proceed once syncing is false (Google Fit data fetched)
+            if (!syncing) {
+                val hasPerms = viewModel.checkPermissions()
+                val elapsed = System.currentTimeMillis() - startTime
+
+                // Enforce the 1.5s brand presence
+                if (elapsed < 1500) delay(1500 - elapsed)
+
+                if (hasPerms) onSyncComplete() else onNavigateToPermissions()
+            }
         }
     }
 
-    // 2. Navigation Trigger: Only navigate to Home if sync finishes AND permissions exist
-    LaunchedEffect(isSyncing) {
-        // We use checkPermissions() here because that's the name in your ViewModel
-        if (!isSyncing && viewModel.checkPermissions()) {
-            onSyncComplete()
-        }
-    }
-
-    Box(
+    Surface(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        // colorScheme.onPrimary is your 0xFFFFFFFF (White)
+        color = MaterialTheme.colorScheme.onPrimary
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "Layzbug",
-                style = MaterialTheme.typography.headlineLarge
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.alpha(alpha.value)
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.layzbug_img),
+                    contentDescription = "Layzbug Logo",
+                    modifier = Modifier.size(180.dp)
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-            CircularProgressIndicator()
+                Text(
+                    text = "Hey Layzbug",
+                    // headlineLarge = Google Sans Flex @ 500 weight
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = "Syncing your walks...",
-                style = MaterialTheme.typography.bodyMedium
-            )
+                Text(
+                    text = "Checking your progress...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceVariant
+                )
+            }
         }
     }
 }

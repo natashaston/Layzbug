@@ -20,7 +20,7 @@ import com.layzbug.app.ui.screens.HistoryScreen
 import com.layzbug.app.ui.screens.MonthDetailScreen
 import com.layzbug.app.ui.screens.PermissionScreen
 import com.layzbug.app.ui.screens.SplashScreen
-import com.layzbug.app.ui.theme.Surface
+import com.layzbug.app.ui.theme.SurfaceColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +37,7 @@ fun LayzbugNavHost() {
     val homeViewModel: HomeViewModel = hiltViewModel()
 
     Scaffold(
-        containerColor = Surface,
+        containerColor = SurfaceColor,
         topBar = {
             // Hide TopBar on Splash and Permission screens for a cleaner look
             val isEntryScreen = currentRoute == "splash" || currentRoute == Routes.Permission.route
@@ -67,7 +67,7 @@ fun LayzbugNavHost() {
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Surface,
+                        containerColor = SurfaceColor,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )

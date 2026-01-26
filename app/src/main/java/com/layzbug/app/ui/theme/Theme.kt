@@ -1,7 +1,6 @@
 package com.layzbug.app.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -30,7 +29,7 @@ private val LightColorScheme = lightColorScheme(
     onErrorContainer = OnErrorContainer,
     background = Background,
     onBackground = OnBackground,
-    surface = Surface,
+    surface = SurfaceColor, // Maps your global 'SurfaceColor' token
     onSurface = OnSurface,
     surfaceVariant = SurfaceVariant,
     onSurfaceVariant = OnSurfaceVariant,
@@ -39,34 +38,32 @@ private val LightColorScheme = lightColorScheme(
     scrim = Scrim,
     inverseSurface = InverseSurface,
     inverseOnSurface = InverseOnSurface,
-    inversePrimary = InversePrimary,
+    inversePrimary = InversePrimary
 )
 
 @Composable
 fun LayzbugTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // TEMP: Only light theme supported for now
-    val colorScheme = LightColorScheme
-
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
 
+            // Set status and navigation bars to transparent for edge-to-edge look
             window.statusBarColor = Color.Transparent.toArgb()
             window.navigationBarColor = Color.Transparent.toArgb()
 
             val insetsController = WindowCompat.getInsetsController(window, view)
-            // Light background → dark icons
+
+            // Forces dark icons (clock, battery) because your background is white
             insetsController.isAppearanceLightStatusBars = true
             insetsController.isAppearanceLightNavigationBars = true
         }
     }
 
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = LightColorScheme,
         typography = AppTypography,
         content = content
     )
