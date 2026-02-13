@@ -21,6 +21,13 @@ import androidx.compose.ui.unit.sp
 import com.layzbug.app.data.viewmodel.CalendarDayModel
 import com.layzbug.app.ui.theme.Dimens
 import com.layzbug.app.ui.theme.GoogleSansFlex
+import com.layzbug.app.ui.theme.OnPrimary
+import com.layzbug.app.ui.theme.OnSurface
+import com.layzbug.app.ui.theme.OnSurfaceVariant
+import com.layzbug.app.ui.theme.OutlineVariant
+import com.layzbug.app.ui.theme.Primary
+import com.layzbug.app.ui.theme.Tertiary
+import com.layzbug.app.ui.theme.SurfaceContainer
 
 @Composable
 fun CalendarGrid(
@@ -28,43 +35,51 @@ fun CalendarGrid(
     onDayClick: (CalendarDayModel) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
-        // 1. Weekday Headers
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = Dimens.spaceXs),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEach { day ->
-                Text(
-                    text = day,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = GoogleSansFlex,
-                        fontWeight = FontWeight.W500,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
+    val weekDays = listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
 
-        // 2. The Days Grid
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Dimens.spaceBase)
+    ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(7),
-            contentPadding = PaddingValues(vertical = Dimens.spaceBase),
+            contentPadding = PaddingValues(bottom = Dimens.spaceBase),
             horizontalArrangement = Arrangement.spacedBy(Dimens.spaceXs),
             verticalArrangement = Arrangement.spacedBy(Dimens.spaceXs),
             modifier = Modifier.fillMaxWidth()
         ) {
-            items(days) { dayModel ->
-                // Using the visual component defined below
-                CalendarDayItem(
-                    dayNumber = dayModel.date.dayOfMonth,
-                    isWalked = dayModel.walked,
-                    onClick = { onDayClick(dayModel) }
-                )
+            // 1. Weekday Headers (Now inside the grid for perfect alignment)
+            items(weekDays) { day ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = Dimens.spaceBase),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = day,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            color = OnSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        ),
+                        maxLines = 1
+                    )
+                }
+            }
+
+            // 2. The Days Grid
+            items(
+                items = days,
+                key = { it.date.toString() } // IMPORTANT: This prevents unnecessary redraws
+            ) { dayModel ->
+                Box(contentAlignment = Alignment.Center) {
+                    CalendarDayItem(
+                        dayNumber = dayModel.date.dayOfMonth,
+                        isWalked = dayModel.walked,
+                        onClick = { onDayClick(dayModel) }
+                    )
+                }
             }
         }
     }
@@ -72,7 +87,6 @@ fun CalendarGrid(
 
 /**
  * Visual UI for an individual day in the grid.
- * Renamed to CalendarDayItem to avoid conflict with old files.
  */
 @Composable
 fun CalendarDayItem(
@@ -83,20 +97,26 @@ fun CalendarDayItem(
 ) {
     Box(
         modifier = modifier
-            .aspectRatio(1f) // Keeps it perfectly circular
+            .size(Dimens.size4xl) // Forces a perfect 40dp circle
             .clip(CircleShape)
             .background(
-                if (isWalked) Color(0xFF81C784)
-                else Color.LightGray.copy(alpha = 0.3f)
+                if (isWalked) Primary
+                else SurfaceContainer,
             )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = dayNumber.toString(),
-            color = if (isWalked) Color.White else Color.Black,
-            fontSize = 14.sp,
-            fontWeight = if (isWalked) FontWeight.Bold else FontWeight.Normal
+            style = if (isWalked) {
+                MaterialTheme.typography.bodySmall.copy(
+                    color = OnPrimary
+                )
+            } else {
+                MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         )
     }
 }

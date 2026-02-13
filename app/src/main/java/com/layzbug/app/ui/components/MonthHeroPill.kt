@@ -22,13 +22,11 @@ import com.layzbug.app.ui.theme.Primary
 import com.layzbug.app.ui.theme.PrimaryContainer
 
 @Composable
-fun StatsCardPill(
+fun MonthHeroPill(
     stats: StatsValue,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     Card(
-        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .height(238.dp),

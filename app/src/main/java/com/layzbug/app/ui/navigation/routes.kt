@@ -5,5 +5,7 @@ sealed class Routes(val route: String) {
     object Permission : Routes("permission")
     object Home : Routes("home")
     object History : Routes("history")
-    object MonthDetail : Routes("month/{year}/{month}")
+    object MonthDetail : Routes("details/{year}/{month}") {
+        fun createRoute(year: Int, month: Int) = "details/$year/$month"
+    }
 }

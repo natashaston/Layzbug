@@ -7,56 +7,64 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.layzbug.app.domain.StatsValue
 import com.layzbug.app.ui.components.CalendarGrid
 import com.layzbug.app.ui.components.EditWalkStatusBottomSheet
-import com.layzbug.app.ui.components.StatsCardPill
 import com.layzbug.app.ui.theme.Dimens
 import com.layzbug.app.ui.theme.SurfaceColor
 import com.layzbug.app.data.viewmodel.MonthViewModel
+import com.layzbug.app.ui.components.MonthHeroPill
 import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MonthDetailScreen(
     onBack: () -> Unit,
+    year: Int = YearMonth.now().year,
+    month: Int = YearMonth.now().monthValue,
     viewModel: MonthViewModel = hiltViewModel()
 ) {
     var showEditSheet by remember { mutableStateOf(false) }
     var selectedDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
 
-    val currentMonth = remember { YearMonth.of(2026, 1) }
+    // Use the passed parameters instead of YearMonth.now()
+    val currentMonth = remember(year, month) { YearMonth.of(year, month) }
+
     val walkDays by viewModel.walkDays.collectAsState()
+    val rawMonthStats by viewModel.monthStats.collectAsState()
+
+    val displayedStats = rawMonthStats
 
     LaunchedEffect(currentMonth) {
         viewModel.loadMonthData(currentMonth)
     }
 
-    val monthStats = remember(walkDays) {
-        val count = walkDays.count { it.walked }
-        StatsValue(
-            value = count,
-            label = "Walks in ${currentMonth.month.name.lowercase().replaceFirstChar { it.uppercase() }}"
-        )
-    }
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = SurfaceColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            MonthHeroPill(
+                stats = displayedStats,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(238.dp)
+            )
 
-    Column(modifier = Modifier.fillMaxSize().background(SurfaceColor).padding(horizontal = 16.dp)) {
-        StatsCardPill(
-            stats = monthStats,
-            onClick = { },
-            modifier = Modifier.fillMaxWidth()
-        )
+            Spacer(modifier = Modifier.height(Dimens.spaceLg))
 
-        Spacer(modifier = Modifier.height(Dimens.spaceLg))
-
-        CalendarGrid(
-            days = walkDays,
-            onDayClick = { clickedDay ->
-                selectedDate = clickedDay.date
-                showEditSheet = true
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+            CalendarGrid(
+                days = walkDays,
+                onDayClick = { clickedDay ->
+                    selectedDate = clickedDay.date
+                    showEditSheet = true
+                },
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 
     if (showEditSheet && selectedDate != null) {

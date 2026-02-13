@@ -58,10 +58,17 @@ class HomeViewModel @Inject constructor(
         StatsValue(value = walks.count { it.isWalked }, label = "Yearly")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StatsValue(0, "Yearly"))
 
-    val januaryWalks: StateFlow<StatsValue> = walkRepository.getWalksForMonth(2026, 1)
-        .map { walks ->
-            StatsValue(value = walks.count { it.isWalked }, label = "January")
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StatsValue(0, "January"))
+    val currentMonthWalks: StateFlow<StatsValue> = walkRepository.getWalksForMonth(
+        today.year,
+        today.monthValue
+    ).map { walks ->
+        val monthName = today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+        StatsValue(value = walks.count { it.isWalked }, label = monthName)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        StatsValue(0, today.month.getDisplayName(TextStyle.FULL, Locale.getDefault()))
+    )
 
     val weeklyDays: StateFlow<List<HomeWalkDay>> = walkRepository.getWalksInRange(startOfWeek, today)
         .map { walks ->

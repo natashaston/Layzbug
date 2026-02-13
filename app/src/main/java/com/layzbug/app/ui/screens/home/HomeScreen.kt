@@ -21,7 +21,18 @@ import com.layzbug.app.ui.components.StatsCard
 import com.layzbug.app.ui.components.StatsCardPill
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import com.layzbug.app.domain.StatsValue
+import com.layzbug.app.ui.theme.Dimens
+import com.layzbug.app.ui.theme.OnPrimary
+import com.layzbug.app.ui.theme.OnSurface
+import com.layzbug.app.ui.theme.OutlineVariant
+import com.layzbug.app.ui.theme.Primary
+import com.layzbug.app.ui.theme.SurfaceContainer
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
+import com.layzbug.app.data.viewmodel.MonthViewModel
 
 @Composable
 fun HomeScreen(
@@ -29,10 +40,12 @@ fun HomeScreen(
     onNavigateToMonthDetail: () -> Unit
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
-
+    val monthViewModel: MonthViewModel = hiltViewModel()
 
     val yearlyWalks by viewModel.yearlyWalks.collectAsState(initial = StatsValue(0, "Yearly"))
-    val januaryWalks by viewModel.januaryWalks.collectAsState(initial = StatsValue(0, "January"))
+    val currentMonthWalks by viewModel.currentMonthWalks.collectAsState(
+        initial = StatsValue(0, LocalDate.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault()))
+    )
     val weeklyDays by viewModel.weeklyDays.collectAsState(initial = emptyList())
 
     Column(
@@ -44,22 +57,23 @@ fun HomeScreen(
             StatsCard(
                 number = yearlyWalks.value.toString(),
                 label = yearlyWalks.label,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).graphicsLayer(),
                 onClick = onNavigateToHistory
             )
 
             // Fixed: Removed the sharedTransitionScope logic that was causing errors
             StatsCardPill(
-                stats = januaryWalks,
-                modifier = Modifier.weight(1f),
+                stats = currentMonthWalks,
+                modifier = Modifier.weight(1f).graphicsLayer(),
                 onClick = onNavigateToMonthDetail
             )
         }
 
-        Spacer(modifier = Modifier.height(30.dp))
-        Text("Weekly Progress", color = Color.Black, fontWeight = FontWeight.Bold)
-        Text("Syncs 30m+ walks from Google Fit", color = Color.Gray, fontSize = 11.sp)
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(Dimens.spaceXl3))
+        Text("Weekly Progress", color = OnSurface, style = MaterialTheme.typography.headlineMedium,)
+        Spacer(modifier = Modifier.height(Dimens.spaceXs2))
+        Text("30 minute walks", color = OnSurface, style = MaterialTheme.typography.bodySmall,)
+        Spacer(modifier = Modifier.height(Dimens.spaceBase))
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
@@ -72,7 +86,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .height(60.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (day.isWalked) Color(0xFF81C784) else Color.LightGray.copy(alpha = 0.5f))
+                        .background(if (day.isWalked) Primary else SurfaceContainer)
                         .clickable {
                             viewModel.toggleDay(day.date, day.isWalked)
                         },
@@ -80,8 +94,15 @@ fun HomeScreen(
                 ) {
                     Text(
                         text = day.label,
-                        color = if (day.isWalked) Color.White else Color.Black,
-                        fontSize = 12.sp
+                        style = if (day.isWalked) {
+                            MaterialTheme.typography.bodySmall.copy(
+                                color = OnPrimary
+                            )
+                        } else {
+                            MaterialTheme.typography.bodySmall.copy(
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     )
                 }
             }

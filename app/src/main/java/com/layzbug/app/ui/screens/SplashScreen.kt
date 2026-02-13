@@ -4,21 +4,21 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.MaterialTheme // Ensure this is here
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.layzbug.app.R
 import com.layzbug.app.ui.screens.home.HomeViewModel
+import com.layzbug.app.ui.theme.Dimens
+import com.layzbug.app.ui.theme.OutlineVariant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import com.layzbug.app.ui.theme.OnSurfaceVariant
 
 @Composable
 fun SplashScreen(
@@ -38,6 +38,9 @@ fun SplashScreen(
         snapshotFlow { isSyncing }.collectLatest { syncing ->
             // Only proceed once syncing is false (Google Fit data fetched)
             if (!syncing) {
+                // Give a small delay to let database writes complete
+                delay(200)
+
                 val hasPerms = viewModel.checkPermissions()
                 val elapsed = System.currentTimeMillis() - startTime
 
@@ -51,11 +54,12 @@ fun SplashScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        // colorScheme.onPrimary is your 0xFFFFFFFF (White)
         color = MaterialTheme.colorScheme.onPrimary
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 64.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -69,21 +73,20 @@ fun SplashScreen(
                     modifier = Modifier.size(180.dp)
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(Dimens.spaceBase))
 
                 Text(
                     text = "Hey Layzbug",
-                    // headlineLarge = Google Sans Flex @ 500 weight
                     style = MaterialTheme.typography.headlineLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(Dimens.spaceSm))
 
                 Text(
                     text = "Checking your progress...",
                     style = MaterialTheme.typography.bodySmall,
-                    color = OnSurfaceVariant
+                    color = OutlineVariant
                 )
             }
         }

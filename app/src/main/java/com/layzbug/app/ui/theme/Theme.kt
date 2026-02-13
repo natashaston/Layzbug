@@ -29,7 +29,7 @@ private val LightColorScheme = lightColorScheme(
     onErrorContainer = OnErrorContainer,
     background = Background,
     onBackground = OnBackground,
-    surface = SurfaceColor, // Maps your global 'SurfaceColor' token
+    surface = SurfaceColor, // Correctly maps the global variable
     onSurface = OnSurface,
     surfaceVariant = SurfaceVariant,
     onSurfaceVariant = OnSurfaceVariant,
@@ -49,14 +49,10 @@ fun LayzbugTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-
-            // Set status and navigation bars to transparent for edge-to-edge look
             window.statusBarColor = Color.Transparent.toArgb()
             window.navigationBarColor = Color.Transparent.toArgb()
 
             val insetsController = WindowCompat.getInsetsController(window, view)
-
-            // Forces dark icons (clock, battery) because your background is white
             insetsController.isAppearanceLightStatusBars = true
             insetsController.isAppearanceLightNavigationBars = true
         }

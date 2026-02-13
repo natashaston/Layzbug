@@ -1,15 +1,11 @@
 package com.layzbug.app.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,27 +38,18 @@ fun StatsCard(
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(Dimens.spaceXl),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(modifier = Modifier.weight(1f))
 
-            Spacer(modifier = Modifier.height(20.dp)) // design spacing token
-
-            Box(
-                modifier = Modifier
-                    .size(160.dp)
-                    .background(
-                        color = Color(0xFF65558F),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = number,
-                    style = MaterialTheme.typography.displayLarge,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            }
+            Text(
+                text = number,
+                style = MaterialTheme.typography.displayLarge,
+                color = Color(0xFF65558F)
+            )
 
             Spacer(modifier = Modifier.height(Dimens.spaceBase))
 
@@ -70,9 +57,10 @@ fun StatsCard(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color(0xFF65558F),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = Dimens.spaceBase)
+                textAlign = TextAlign.Center
             )
+
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }

@@ -17,10 +17,23 @@ val DisplayRobotoFlex = FontFamily(
     Font(
         resId = R.font.roboto_flex,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(600),
+            FontVariation.weight(500),
             FontVariation.width(55f),
             FontVariation.slant(-10f),
             FontVariation.Setting("opsz", 80f)
+        )
+    )
+)
+
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val DisplayRobotoFlexMedium = FontFamily(
+    Font(
+        resId = R.font.roboto_flex,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(500),
+            FontVariation.width(60f),        // Slightly wider for better readability at 32sp
+            FontVariation.slant(-8f),        // Less slant for medium size
+            FontVariation.Setting("opsz", 32f)  // Optical size matches fontSize
         )
     )
 )
@@ -68,11 +81,20 @@ val AppTypography = Typography(
     // title-80-semibold (Figma: 365)
     displayLarge = TextStyle(
         fontFamily = DisplayRobotoFlex,
-        fontWeight = FontWeight.W600,
+        fontWeight = FontWeight.W500,
         fontSize = 80.sp,
         lineHeight = 94.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = 1.sp,
         textAlign = TextAlign.Center
+    ),
+
+    // title-32-semibold with custom DisplayRobotoFlex settings
+    displayMedium = TextStyle(
+        fontFamily = DisplayRobotoFlexMedium,
+        fontWeight = FontWeight.W500,
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
+        letterSpacing = 0.5.sp
     ),
 
     // title-32-medium (Figma: Hey Layzbug)
