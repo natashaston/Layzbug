@@ -1,11 +1,12 @@
 package com.layzbug.app.di
 
-import androidx.room.Room
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
+import androidx.room.Room
 import com.layzbug.app.FitSyncManager
 import com.layzbug.app.data.local.AppDatabase
 import com.layzbug.app.data.local.WalkDao
+import com.layzbug.app.data.repository.FirebaseRepository
 import com.layzbug.app.data.repository.WalkRepository
 import dagger.Module
 import dagger.Provides
@@ -35,15 +36,22 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideWalkRepository(walkDao: WalkDao): WalkRepository {
-        return WalkRepository(walkDao)
+    fun provideFirebaseRepository(): FirebaseRepository {
+        return FirebaseRepository()
+    }
+
+    @Provides
+    @Singleton
+    fun provideWalkRepository(
+        walkDao: WalkDao,
+        firebaseRepository: FirebaseRepository
+    ): WalkRepository {
+        return WalkRepository(walkDao, firebaseRepository)
     }
 
     @Provides
     @Singleton
     fun provideFitSyncManager(healthConnectClient: HealthConnectClient): FitSyncManager {
-        // No more 'as HealthConnectClient' cast!
-        // Hilt provides the real client from your HealthModule.
         return FitSyncManager(healthConnectClient)
     }
 }

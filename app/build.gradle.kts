@@ -2,10 +2,10 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kapt) // No extra versioning here
+    id("org.jetbrains.kotlin.kapt")
     alias(libs.plugins.hilt)
+    alias(libs.plugins.google.services)
 }
-
 android {
     namespace = "com.layzbug.app"
     compileSdk = 35
@@ -16,7 +16,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -35,7 +34,6 @@ android {
     }
 }
 
-// This block is now managed correctly by the kotlin-compose plugin
 composeCompiler {
     enableStrongSkippingMode = true
 }
@@ -45,7 +43,6 @@ kapt {
 }
 
 dependencies {
-    // Standard Desugaring for java.time (LocalDate)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     implementation(libs.androidx.core.ktx)
@@ -69,4 +66,9 @@ dependencies {
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.auth)
 }
