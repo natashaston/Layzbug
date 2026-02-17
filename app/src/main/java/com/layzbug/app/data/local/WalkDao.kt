@@ -14,4 +14,8 @@ interface WalkDao {
 
     @Upsert
     suspend fun upsertWalk(walk: WalkEntity)
+
+    // NEW: Get distinct years from walks table
+    @Query("SELECT DISTINCT substr(date, 1, 4) FROM walks ORDER BY date DESC")
+    fun getDistinctYears(): Flow<List<String>>
 }

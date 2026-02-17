@@ -9,6 +9,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.map
 
 @Singleton // Important: Makes this a singleton so it persists across ViewModels
 class WalkRepository @Inject constructor(
@@ -34,6 +35,17 @@ class WalkRepository @Inject constructor(
             currentCache[yearMonth] = entities
             monthCache.value = currentCache
             entities
+        }
+    }
+    fun getAvailableYears(): Flow<List<Int>> {
+        return walkDao.getDistinctYears().map { years ->
+            val currentYear = LocalDate.now().year
+            // Always include current year even if no walks yet
+            val dbYears = years.map { it.toInt() }.toMutableList()
+            if (!dbYears.contains(currentYear)) {
+                dbYears.add(0, currentYear)
+            }
+            dbYears.sorted().reversed()
         }
     }
 

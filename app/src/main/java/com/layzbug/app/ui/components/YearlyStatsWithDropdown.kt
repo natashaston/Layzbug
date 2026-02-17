@@ -1,6 +1,5 @@
 package com.layzbug.app.ui.components
 
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,9 +23,7 @@ fun YearlyStatsWithDropdown(
     onYearSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-
     var expanded by remember { mutableStateOf(false) }
-    val interactionSource = remember { MutableInteractionSource() }
 
     Card(
         modifier = modifier
@@ -36,9 +33,8 @@ fun YearlyStatsWithDropdown(
         colors = CardDefaults.cardColors(
             containerColor = PrimaryContainer
         ),
-        elevation = CardDefaults.cardElevation(0.dp)
+        elevation = CardDefaults.cardElevation(Dimens.spaceZero)
     ) {
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -49,16 +45,12 @@ fun YearlyStatsWithDropdown(
                     top = Dimens.spaceSm
                 )
         ) {
-
-            // ─────────────────────────────
             // Left Side — Stats
-            // ─────────────────────────────
             Column(
                 modifier = Modifier.align(Alignment.CenterStart),
                 horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.Top
             ) {
-
                 Text(
                     text = totalWalks.toString(),
                     style = MaterialTheme.typography.displayLarge,
@@ -75,13 +67,10 @@ fun YearlyStatsWithDropdown(
                 )
             }
 
-            // ─────────────────────────────
-            // Top Right — Year Dropdown Trigger
-            // ─────────────────────────────
+            // Top Right — Year Dropdown
             Box(
                 modifier = Modifier.align(Alignment.TopEnd)
             ) {
-
                 FilledTonalButton(
                     onClick = { expanded = true },
                     colors = ButtonDefaults.filledTonalButtonColors(
@@ -93,7 +82,6 @@ fun YearlyStatsWithDropdown(
                         vertical = Dimens.spaceXs
                     )
                 ) {
-
                     Text(
                         text = selectedYear.toString(),
                         style = MaterialTheme.typography.bodyLarge
@@ -108,21 +96,15 @@ fun YearlyStatsWithDropdown(
                     )
                 }
 
-                // ─────────────────────────────
-                // Expressive Styled Dropdown Menu
-                // (Stable Material3)
-                // ─────────────────────────────
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
                     shape = RoundedCornerShape(Dimens.radius2xl),
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp,
+                    tonalElevation = Dimens.spaceXs2.value.dp,
+                    shadowElevation = Dimens.spaceXs.value.dp,
                     modifier = Modifier.width(IntrinsicSize.Min)
                 ) {
-
                     availableYears.forEach { year ->
-
                         DropdownMenuItem(
                             text = {
                                 Text(
@@ -130,7 +112,6 @@ fun YearlyStatsWithDropdown(
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                             },
-                            interactionSource = interactionSource,
                             onClick = {
                                 onYearSelected(year)
                                 expanded = false

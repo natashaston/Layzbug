@@ -23,11 +23,19 @@ class HistoryViewModel @Inject constructor(
     private val walkRepository: WalkRepository
 ) : ViewModel() {
 
-    private val _selectedYear = MutableStateFlow(LocalDate.now().year)
-    val selectedYear: StateFlow<Int> = _selectedYear.asStateFlow()
-
     private val currentMonth = LocalDate.now().monthValue
-    private val currentYear = LocalDate.now().year
+    val currentYear = LocalDate.now().year
+
+    // Dynamic years from database
+    val availableYears: StateFlow<List<Int>> = walkRepository.getAvailableYears()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = listOf(currentYear)
+        )
+
+    private val _selectedYear = MutableStateFlow(currentYear)
+    val selectedYear: StateFlow<Int> = _selectedYear.asStateFlow()
 
     val monthsStats: StateFlow<List<MonthStats>> = _selectedYear.flatMapLatest { year ->
         combine(
@@ -49,8 +57,8 @@ class HistoryViewModel @Inject constructor(
         ) { statsArray -> statsArray.toList() }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly, // Changed to Eagerly
-        initialValue = buildInitialMonthStats(currentYear) // Build from cache
+        started = SharingStarted.Eagerly,
+        initialValue = buildInitialMonthStats(currentYear)
     )
 
     val yearTotal: StateFlow<Int> = monthsStats.map { months ->
@@ -59,7 +67,6 @@ class HistoryViewModel @Inject constructor(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = run {
-            // Try to get cached data for initial value
             (1..12).sumOf { month ->
                 walkRepository.getCachedMonthData(currentYear, month)?.count { it.isWalked } ?: 0
             }
@@ -67,12 +74,21 @@ class HistoryViewModel @Inject constructor(
     )
 
     init {
+        viewModelScope.launch {
+            // When available years load, select the most recent one
+            availableYears.collect { years ->
+                if (years.isNotEmpty() && _selectedYear.value == currentYear) {
+                    _selectedYear.value = years.first() // First = most recent
+                }
+            }
+        }
+
         // Preload current year data
         viewModelScope.launch {
             (1..12).forEach { month ->
                 walkRepository.getWalksForMonth(currentYear, month)
                     .take(1)
-                    .collect { /* This populates the cache */ }
+                    .collect { }
             }
         }
     }

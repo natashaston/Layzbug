@@ -13,6 +13,7 @@ import com.layzbug.app.ui.components.MonthCard
 import com.layzbug.app.ui.components.YearlyStatsWithDropdown
 import com.layzbug.app.ui.theme.Dimens
 
+
 @Composable
 fun HistoryScreen(
     onBack: () -> Unit,
@@ -22,6 +23,7 @@ fun HistoryScreen(
     val selectedYear by viewModel.selectedYear.collectAsState()
     val monthsStats by viewModel.monthsStats.collectAsState()
     val yearTotal by viewModel.yearTotal.collectAsState()
+    val availableYears by viewModel.availableYears.collectAsState()
 
     val years = (2020..2030).toList()
 
@@ -34,7 +36,7 @@ fun HistoryScreen(
         YearlyStatsWithDropdown(
             totalWalks = yearTotal,
             selectedYear = selectedYear,
-            availableYears = years,
+            availableYears = availableYears, // Now from ViewModel
             onYearSelected = { year -> viewModel.setSelectedYear(year) },
             modifier = Modifier.padding(vertical = Dimens.spaceBase)
         )

@@ -1,7 +1,7 @@
 [versions]
-agp = "8.13.2" # Reverting to a stable AGP for Kotlin 2.2
-kotlin = "2.1.0" # Use 2.1.0 for better stability with current Hilt
-hilt = "2.54" # A highly stable version for the current Compose Compiler
+agp = "8.13.2"
+kotlin = "2.1.0"
+hilt = "2.54"
 room = "2.7.0-alpha11"
 coreKtx = "1.12.0"
 lifecycleRuntimeKtx = "2.8.0"
@@ -12,6 +12,7 @@ junitVersion = "1.1.5"
 espressoCore = "3.5.1"
 composeBom = "2024.09.00"
 health-connect = "1.1.0-alpha11"
+firebase-bom = "33.7.0"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -19,6 +20,7 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
+google-services = { id = "com.google.gms.google-services", version = "4.4.2" }
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -35,6 +37,9 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version = "1.2.0" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }
+firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore-ktx" }
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth-ktx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
