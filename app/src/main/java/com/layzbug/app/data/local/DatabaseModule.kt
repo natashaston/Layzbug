@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.room.Room
 import com.layzbug.app.FitSyncManager
+import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.local.AppDatabase
 import com.layzbug.app.data.local.WalkDao
 import com.layzbug.app.data.repository.FirebaseRepository
@@ -32,6 +33,12 @@ object DatabaseModule {
     @Provides
     fun provideWalkDao(database: AppDatabase): WalkDao {
         return database.walkDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideAuthManager(@ApplicationContext context: Context): AuthManager {
+        return AuthManager(context)
     }
 
     @Provides

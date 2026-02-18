@@ -38,12 +38,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LayzbugTheme {
-                // Surface now uses the colorScheme mapping established in Theme.kt
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface
                 ) {
                     LayzbugNavHost()
+
                 }
             }
         }

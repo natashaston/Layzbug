@@ -1,8 +1,12 @@
 package com.layzbug.app.data.viewmodel
 
+import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.layzbug.app.FitSyncManager
+import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.repository.WalkRepository
 import com.layzbug.app.domain.StatsValue
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,26 +23,27 @@ data class CalendarDayModel(val date: LocalDate, val walked: Boolean)
 @HiltViewModel
 class MonthViewModel @Inject constructor(
     private val fitSyncManager: FitSyncManager,
-    private val walkRepository: WalkRepository
+    private val walkRepository: WalkRepository,
+    private val authManager: AuthManager
 ) : ViewModel() {
 
     private val _currentMonth = MutableStateFlow(YearMonth.now())
+    private val _refreshTrigger = MutableStateFlow(0) // Add refresh trigger
+
+    private val _showSignInPrompt = MutableStateFlow(false)
+    val showSignInPrompt: StateFlow<Boolean> = _showSignInPrompt.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val walkDays: StateFlow<List<CalendarDayModel>> = _currentMonth.flatMapLatest { month ->
-        // Try to get cached data first
-        val cached = walkRepository.getCachedMonthData(month.year, month.monthValue)
-
-        if (cached != null) {
-            // Return cached data immediately
-            flowOf(buildCalendarDays(month, cached))
-        } else {
-            // Load from database
+    val walkDays: StateFlow<List<CalendarDayModel>> = combine(
+        _currentMonth,
+        _refreshTrigger // Combine with refresh trigger
+    ) { month, _ -> month }
+        .flatMapLatest { month ->
+            // Always fetch from database, don't use cache for display
             walkRepository.getWalksForMonth(month.year, month.monthValue).map { entities ->
                 buildCalendarDays(month, entities)
             }
         }
-    }
         .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,
@@ -70,7 +75,6 @@ class MonthViewModel @Inject constructor(
     }
 
     private fun buildInitialCalendarDays(month: YearMonth): List<CalendarDayModel> {
-        // Use cached data if available for instant initial value
         val cached = walkRepository.getCachedMonthData(month.year, month.monthValue)
         return if (cached != null) {
             buildCalendarDays(month, cached)
@@ -94,7 +98,39 @@ class MonthViewModel @Inject constructor(
 
     fun setWalkStatus(date: LocalDate, status: Boolean) {
         viewModelScope.launch {
+            Log.d("MonthViewModel", "Setting walk status for $date to $status")
             walkRepository.updateWalk(date, status)
+
+            // Trigger refresh after update
+            _refreshTrigger.value++
+
+            Log.d("MonthViewModel", "Is logged in: ${authManager.isLoggedIn}")
+            if (!authManager.isLoggedIn) {
+                Log.d("MonthViewModel", "Not logged in, showing prompt after 2s")
+                kotlinx.coroutines.delay(2000)
+                _showSignInPrompt.value = true
+                Log.d("MonthViewModel", "showSignInPrompt set to: ${_showSignInPrompt.value}")
+            } else {
+                Log.d("MonthViewModel", "Already logged in, skipping prompt")
+            }
         }
+    }
+
+    fun launchSignIn(launcher: ActivityResultLauncher<android.content.Intent>) {
+        val signInIntent = authManager.getGoogleSignInClient().signInIntent
+        launcher.launch(signInIntent)
+    }
+
+    suspend fun signInWithGoogle(account: GoogleSignInAccount) {
+        val result = authManager.signInWithGoogle(account)
+        if (result.isSuccess) {
+            Log.d("MonthViewModel", "Sign in successful, syncing data...")
+            walkRepository.syncFromFirebase()
+            walkRepository.startFirebaseSync()
+        }
+    }
+
+    fun dismissSignInPrompt() {
+        _showSignInPrompt.value = false
     }
 }

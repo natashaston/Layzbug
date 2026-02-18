@@ -1,18 +1,24 @@
 package com.layzbug.app.ui.screens
 
-import androidx.compose.foundation.background
+import android.app.Activity
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.common.api.ApiException
 import com.layzbug.app.ui.components.CalendarGrid
 import com.layzbug.app.ui.components.EditWalkStatusBottomSheet
 import com.layzbug.app.ui.theme.Dimens
 import com.layzbug.app.ui.theme.SurfaceColor
 import com.layzbug.app.data.viewmodel.MonthViewModel
 import com.layzbug.app.ui.components.MonthHeroPill
+import kotlinx.coroutines.launch
 import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,29 +32,67 @@ fun MonthDetailScreen(
     var showEditSheet by remember { mutableStateOf(false) }
     var selectedDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
 
-    // Use the passed parameters instead of YearMonth.now()
     val currentMonth = remember(year, month) { YearMonth.of(year, month) }
-
     val walkDays by viewModel.walkDays.collectAsState()
     val rawMonthStats by viewModel.monthStats.collectAsState()
+    val showSignInPrompt by viewModel.showSignInPrompt.collectAsState()
 
-    val displayedStats = rawMonthStats
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // Google Sign-In launcher
+    val signInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                scope.launch {
+                    viewModel.signInWithGoogle(account)
+                }
+            } catch (e: ApiException) {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Sign in cancelled")
+                }
+            }
+        }
+    }
+
+    // Show sign-in snackbar when triggered
+    LaunchedEffect(showSignInPrompt) {
+        Log.d("MonthDetailScreen", "showSignInPrompt changed to: $showSignInPrompt")
+        if (showSignInPrompt) {
+            Log.d("MonthDetailScreen", "Showing snackbar...")
+            val result = snackbarHostState.showSnackbar(
+                message = "Sign in to sync walks across devices",
+                actionLabel = "Sign In",
+                duration = SnackbarDuration.Long
+            )
+            Log.d("MonthDetailScreen", "Snackbar result: $result")
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.launchSignIn(signInLauncher)
+            }
+            viewModel.dismissSignInPrompt()
+        }
+    }
 
     LaunchedEffect(currentMonth) {
         viewModel.loadMonthData(currentMonth)
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = SurfaceColor
-    ) {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = SurfaceColor
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(paddingValues)
                 .padding(horizontal = 16.dp)
         ) {
             MonthHeroPill(
-                stats = displayedStats,
+                stats = rawMonthStats,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(238.dp)
@@ -74,12 +118,22 @@ fun MonthDetailScreen(
             dateLabel = "${selectedDate?.month?.name?.lowercase()?.replaceFirstChar { it.uppercase() }} ${selectedDate?.dayOfMonth}",
             currentStatus = walkDay?.walked ?: false,
             onWalked = {
-                selectedDate?.let { viewModel.setWalkStatus(it, true) }
-                showEditSheet = false
+                selectedDate?.let {
+                    viewModel.setWalkStatus(it, true)
+                }
+                scope.launch {
+                    kotlinx.coroutines.delay(300)
+                    showEditSheet = false
+                }
             },
             onNotWalked = {
-                selectedDate?.let { viewModel.setWalkStatus(it, false) }
-                showEditSheet = false
+                selectedDate?.let {
+                    viewModel.setWalkStatus(it, false)
+                }
+                scope.launch {
+                    kotlinx.coroutines.delay(300)
+                    showEditSheet = false
+                }
             },
             onDismiss = { showEditSheet = false }
         )
