@@ -88,8 +88,11 @@ fun MonthDetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = paddingValues.calculateBottomPadding()
+                )
         ) {
             MonthHeroPill(
                 stats = rawMonthStats,

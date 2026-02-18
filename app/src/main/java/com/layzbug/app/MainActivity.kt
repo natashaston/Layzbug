@@ -11,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.lifecycleScope
+import com.google.firebase.auth.FirebaseAuth
 import com.layzbug.app.ui.navigation.LayzbugNavHost
 import com.layzbug.app.ui.theme.LayzbugTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -32,6 +33,11 @@ class MainActivity : ComponentActivity() {
                 else ->
                     Log.d("LAYZBUG", "Health Connect is READY")
             }
+        }
+        // TEMPORARY: Sign out to test login prompt
+        lifecycleScope.launch {
+            FirebaseAuth.getInstance().signOut()
+            Log.d("LAYZBUG", "Signed out for testing")
         }
 
         enableEdgeToEdge()
