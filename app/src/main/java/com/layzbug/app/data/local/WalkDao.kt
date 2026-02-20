@@ -6,6 +6,9 @@ import java.time.LocalDate
 
 @Dao
 interface WalkDao {
+    @Query("SELECT * FROM walks")
+    suspend fun getAllWalks(): List<WalkEntity>
+
     @Query("SELECT * FROM walks WHERE date BETWEEN :startDate AND :endDate")
     fun getWalksInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<WalkEntity>>
 

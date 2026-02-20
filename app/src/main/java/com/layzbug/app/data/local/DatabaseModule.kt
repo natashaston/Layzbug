@@ -7,8 +7,9 @@ import com.layzbug.app.FitSyncManager
 import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.local.AppDatabase
 import com.layzbug.app.data.local.WalkDao
-import com.layzbug.app.data.repository.FirebaseRepository
+import com.layzbug.app.data.repository.SupabaseRepository
 import com.layzbug.app.data.repository.WalkRepository
+import com.google.firebase.auth.FirebaseAuth
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,23 +38,23 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideAuthManager(@ApplicationContext context: Context): AuthManager {
-        return AuthManager(context)
+    fun provideFirebaseAuth(): FirebaseAuth {
+        return FirebaseAuth.getInstance()
     }
 
     @Provides
     @Singleton
-    fun provideFirebaseRepository(): FirebaseRepository {
-        return FirebaseRepository()
+    fun provideAuthManager(@ApplicationContext context: Context, auth: FirebaseAuth): AuthManager {
+        return AuthManager(context, auth)
     }
 
     @Provides
     @Singleton
     fun provideWalkRepository(
         walkDao: WalkDao,
-        firebaseRepository: FirebaseRepository
+        supabaseRepository: SupabaseRepository
     ): WalkRepository {
-        return WalkRepository(walkDao, firebaseRepository)
+        return WalkRepository(walkDao, supabaseRepository)
     }
 
     @Provides

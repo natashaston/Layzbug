@@ -1,5 +1,6 @@
 package com.layzbug.app.ui.screens
 
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -16,9 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.layzbug.app.R
 import com.layzbug.app.ui.screens.home.HomeViewModel
 import com.layzbug.app.ui.theme.Dimens
-import com.layzbug.app.ui.theme.OutlineVariant
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun SplashScreen(
@@ -30,25 +29,47 @@ fun SplashScreen(
     val alpha = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        // Animation runs in parallel with the sync check
+        Log.d("SplashScreen", "🚀 Starting splash screen")
+
+        // Fade in animation
         alpha.animateTo(1f, animationSpec = tween(500))
 
         val startTime = System.currentTimeMillis()
 
-        snapshotFlow { isSyncing }.collectLatest { syncing ->
-            // Only proceed once syncing is false (Google Fit data fetched)
-            if (!syncing) {
-                // Give a small delay to let database writes complete
-                delay(200)
+        // Check permissions
+        val hasPerms = viewModel.checkPermissions()
+        Log.d("SplashScreen", "Permissions: $hasPerms")
 
-                val hasPerms = viewModel.checkPermissions()
-                val elapsed = System.currentTimeMillis() - startTime
+        if (hasPerms) {
+            // Start sync and wait for it
+            Log.d("SplashScreen", "Starting sync...")
+            viewModel.startInitialSync()
 
-                // Enforce the 1.5s brand presence
-                if (elapsed < 1500) delay(1500 - elapsed)
-
-                if (hasPerms) onSyncComplete() else onNavigateToPermissions()
+            // Wait for sync to complete (with 30 second timeout)
+            var waitTime = 0L
+            while (isSyncing && waitTime < 30000) {
+                delay(100)
+                waitTime += 100
             }
+
+            Log.d("SplashScreen", "Sync complete")
+
+            // Give time for database writes to complete
+            delay(300)
+        }
+
+        // Enforce minimum 1.5s brand presence
+        val elapsed = System.currentTimeMillis() - startTime
+        if (elapsed < 1500) {
+            delay(1500 - elapsed)
+        }
+
+        // Navigate
+        Log.d("SplashScreen", "Navigating... hasPerms=$hasPerms")
+        if (hasPerms) {
+            onSyncComplete()
+        } else {
+            onNavigateToPermissions()
         }
     }
 
@@ -57,9 +78,7 @@ fun SplashScreen(
         color = MaterialTheme.colorScheme.onPrimary
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 64.dp),
+            modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -81,13 +100,7 @@ fun SplashScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                Spacer(modifier = Modifier.height(Dimens.spaceSm))
-
-                Text(
-                    text = "Checking your progress...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OutlineVariant
-                )
+                // No syncing text - keeps layout stable
             }
         }
     }

@@ -34,11 +34,6 @@ class MainActivity : ComponentActivity() {
                     Log.d("LAYZBUG", "Health Connect is READY")
             }
         }
-        // TEMPORARY: Sign out to test login prompt
-        lifecycleScope.launch {
-            FirebaseAuth.getInstance().signOut()
-            Log.d("LAYZBUG", "Signed out for testing")
-        }
 
         enableEdgeToEdge()
 

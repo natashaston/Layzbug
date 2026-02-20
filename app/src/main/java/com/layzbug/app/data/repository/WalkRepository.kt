@@ -1,5 +1,6 @@
 package com.layzbug.app.data.repository
 
+import android.util.Log
 import com.layzbug.app.data.local.WalkDao
 import com.layzbug.app.data.local.WalkEntity
 import kotlinx.coroutines.CoroutineScope
@@ -17,10 +18,13 @@ import javax.inject.Singleton
 @Singleton
 class WalkRepository @Inject constructor(
     private val walkDao: WalkDao,
-    private val firebaseRepository: FirebaseRepository
+    private val supabaseRepository: SupabaseRepository
 ) {
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val monthCache = MutableStateFlow<Map<YearMonth, List<WalkEntity>>>(emptyMap())
+
+    // Track which walks are manual vs Google Fit
+    private val manualWalks = mutableSetOf<LocalDate>()
 
     fun getWalksInRange(start: LocalDate, end: LocalDate): Flow<List<WalkEntity>> {
         return walkDao.getWalksInRange(start, end)
@@ -54,9 +58,21 @@ class WalkRepository @Inject constructor(
         return walkDao.getWalkStatus(date) ?: false
     }
 
-    suspend fun updateWalk(date: LocalDate, isWalked: Boolean) {
-        // Always update local DB first
+    /**
+     * Update walk - for MANUAL marks only
+     * Google Fit walks are updated via updateWalkFromGoogleFit()
+     */
+    suspend fun updateManualWalk(date: LocalDate, isWalked: Boolean) {
+        // Update local DB
         walkDao.upsertWalk(WalkEntity(date, isWalked))
+        Log.d("WalkRepository", "✅ Updated local DB (manual): $date = $isWalked")
+
+        // Track as manual walk
+        if (isWalked) {
+            manualWalks.add(date)
+        } else {
+            manualWalks.remove(date)
+        }
 
         // Invalidate cache
         val yearMonth = YearMonth.of(date.year, date.month)
@@ -64,11 +80,29 @@ class WalkRepository @Inject constructor(
         currentCache.remove(yearMonth)
         monthCache.value = currentCache
 
-        // Sync to Firebase if logged in (fire and forget)
-        if (firebaseRepository.isLoggedIn) {
-            repositoryScope.launch {
-                firebaseRepository.syncWalkToFirebase(date, isWalked)
+        // Sync manual walk to Supabase
+        repositoryScope.launch {
+            Log.d("WalkRepository", "🔄 Syncing manual walk to Supabase: $date = $isWalked")
+
+            if (isWalked) {
+                supabaseRepository.syncManualWalk(date, true)
+            } else {
+                // If unmarking, delete from Supabase
+                supabaseRepository.deleteManualWalk(date)
             }
+        }
+    }
+
+    /**
+     * Update walk from Google Fit - does NOT sync to Supabase
+     */
+    suspend fun updateWalkFromGoogleFit(date: LocalDate, isWalked: Boolean) {
+        // Only update if not already a manual walk
+        if (!manualWalks.contains(date)) {
+            walkDao.upsertWalk(WalkEntity(date, isWalked))
+            Log.d("WalkRepository", "✅ Updated from Google Fit: $date = $isWalked")
+        } else {
+            Log.d("WalkRepository", "⏭️ Skipped $date - is manual walk")
         }
     }
 
@@ -76,24 +110,60 @@ class WalkRepository @Inject constructor(
         return monthCache.value[YearMonth.of(year, month)]
     }
 
-    // Sync all Firebase walks to local DB (called after login)
-    suspend fun syncFromFirebase() {
-        val firebaseWalks = firebaseRepository.fetchAllWalks()
-        firebaseWalks.forEach { entry ->
-            val date = LocalDate.parse(entry.date)
-            walkDao.upsertWalk(WalkEntity(date, entry.isWalked))
+    /**
+     * Sync manual walks FROM Supabase (called after login)
+     */
+    suspend fun syncFromSupabase() {
+        Log.d("WalkRepository", "📥 Syncing manual walks from Supabase...")
+
+        val manualWalksFromCloud = supabaseRepository.fetchAllManualWalks()
+        Log.d("WalkRepository", "📦 Fetched ${manualWalksFromCloud.size} manual walks")
+
+        manualWalksFromCloud.forEach { walk ->
+            val date = LocalDate.parse(walk.walkDate)
+
+            // Mark as manual walk
+            if (walk.isWalked) {
+                manualWalks.add(date)
+            }
+
+            // Update local DB
+            walkDao.upsertWalk(WalkEntity(date, walk.isWalked))
+            Log.d("WalkRepository", "  ✅ Synced: $date = ${walk.isWalked}")
         }
+
+        Log.d("WalkRepository", "✅ Supabase sync complete")
     }
 
-    // Start observing Firestore changes (called after login)
-    fun startFirebaseSync() {
+    /**
+     * Start observing Supabase changes (real-time)
+     */
+    fun startSupabaseSync() {
+        Log.d("WalkRepository", "👂 Starting Supabase real-time listener...")
+
         repositoryScope.launch {
-            firebaseRepository.observeWalks().collect { firebaseWalks ->
-                firebaseWalks.forEach { entry ->
-                    val date = LocalDate.parse(entry.date)
-                    walkDao.upsertWalk(WalkEntity(date, entry.isWalked))
+            supabaseRepository.observeManualWalks().collect { walks ->
+                Log.d("WalkRepository", "🔔 Supabase update: ${walks.size} manual walks")
+
+                walks.forEach { walk ->
+                    val date = LocalDate.parse(walk.walkDate)
+
+                    // Mark as manual walk
+                    if (walk.isWalked) {
+                        manualWalks.add(date)
+                    }
+
+                    // Update local DB
+                    walkDao.upsertWalk(WalkEntity(date, walk.isWalked))
                 }
             }
         }
+    }
+
+    /**
+     * Check if user is logged into Supabase (has Google account)
+     */
+    fun isSupabaseLoggedIn(): Boolean {
+        return supabaseRepository.isLoggedIn
     }
 }

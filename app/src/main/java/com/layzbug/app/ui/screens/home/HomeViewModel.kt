@@ -13,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
@@ -31,10 +32,11 @@ class HomeViewModel @Inject constructor(
     private val startOfYear = LocalDate.of(2026, 1, 1)
     private val startOfWeek = today.minusDays(6)
 
-    private val _isSyncing = MutableStateFlow(true)
+    private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
-    // --- NEW: Permission check for the Splash Screen ---
+    private var hasInitialSyncCompleted = false
+
     private val requiredPermissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class)
@@ -42,11 +44,11 @@ class HomeViewModel @Inject constructor(
 
     suspend fun checkPermissions(): Boolean {
         return try {
-            // This calls a helper in your FitSyncManager (ensure it exists)
             val granted = fitSyncManager.hasPermissions(requiredPermissions)
             Log.d("LayzbugSync", "Permissions granted: $granted")
             granted
         } catch (e: Exception) {
+            Log.e("LayzbugSync", "Permission check failed: ${e.message}")
             false
         }
     }
@@ -84,45 +86,94 @@ class HomeViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        autoSyncSteps()
+        Log.d("LayzbugSync", "HomeViewModel initialized - NOT auto-syncing")
+
+        // Start Supabase real-time listener if already logged in
+        viewModelScope.launch {
+            delay(500)
+
+            if (walkRepository.isSupabaseLoggedIn()) {
+                Log.d("LayzbugSync", "✅ Already logged in, starting Supabase listener")
+                walkRepository.startSupabaseSync()
+            } else {
+                Log.d("LayzbugSync", "⚠️ Not logged in, skipping Supabase listener")
+            }
+        }
     }
 
-    private fun autoSyncSteps() {
+    fun startInitialSync() {
+        if (hasInitialSyncCompleted) {
+            Log.d("LayzbugSync", "⏭️ Skipping sync - already completed")
+            return
+        }
+
         viewModelScope.launch {
             _isSyncing.value = true
             try {
-                // First, ensure we have permissions before even trying to sync
-                if (!checkPermissions()) {
-                    Log.w("LayzbugSync", "Aborting sync: Permissions not granted")
-                    return@launch
-                }
+                Log.d("LayzbugSync", "🚀 Starting initial sync...")
 
-                val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
-
-                for (i in 0..daysToSync) {
-                    val date = startOfYear.plusDays(i)
-                    val isWalkedInDb = walkRepository.getWalkStatus(date)
-
-                    if (!isWalkedInDb) {
-                        val hasMetGoal = fitSyncManager.checkWalkingGoal(date)
-                        if (hasMetGoal) {
-                            walkRepository.updateWalk(date, true)
-                            delay(50)
-                            Log.d("LayzbugSync", "Successfully synced $date")
-                        }
+                // Check if Supabase is active
+                if (walkRepository.isSupabaseLoggedIn()) {
+                    Log.d("LayzbugSync", "✅ Supabase is active, syncing manual walks...")
+                    walkRepository.syncFromSupabase()
+                    walkRepository.startSupabaseSync()
+                    Log.d("LayzbugSync", "✅ Now syncing from Google Fit...")
+                    // Continue to Google Fit sync - both can run
+                    withTimeout(30_000) {
+                        autoSyncSteps()
+                    }
+                } else {
+                    Log.d("LayzbugSync", "⚠️ Not logged in, syncing from Google Fit...")
+                    withTimeout(30_000) {
+                        autoSyncSteps()
                     }
                 }
+
+                hasInitialSyncCompleted = true
+                Log.d("LayzbugSync", "✅ Initial sync complete")
             } catch (e: Exception) {
-                Log.e("LayzbugSync", "Sync failed: ${e.message}")
+                Log.e("LayzbugSync", "❌ Sync failed: ${e.message}", e)
             } finally {
                 _isSyncing.value = false
             }
         }
     }
 
+    private suspend fun autoSyncSteps() {
+        if (!checkPermissions()) {
+            Log.w("LayzbugSync", "⚠️ Aborting sync: Permissions not granted")
+            return
+        }
+
+        val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
+        Log.d("LayzbugSync", "Syncing $daysToSync days from Google Fit...")
+
+        var syncedCount = 0
+        for (i in 0..daysToSync) {
+            val date = startOfYear.plusDays(i)
+
+            try {
+                val isWalkedInDb = walkRepository.getWalkStatus(date)
+
+                if (!isWalkedInDb) {
+                    val hasMetGoal = fitSyncManager.checkWalkingGoal(date)
+                    if (hasMetGoal) {
+                        walkRepository.updateWalkFromGoogleFit(date, true)
+                        syncedCount++
+                        delay(50)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
+            }
+        }
+
+        Log.d("LayzbugSync", "✅ Synced $syncedCount new walks from Google Fit")
+    }
+
     fun toggleDay(date: LocalDate, currentStatus: Boolean) {
         viewModelScope.launch {
-            walkRepository.updateWalk(date, !currentStatus)
+            walkRepository.updateManualWalk(date, !currentStatus)
         }
     }
 }

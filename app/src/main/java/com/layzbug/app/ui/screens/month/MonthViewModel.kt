@@ -1,10 +1,8 @@
 package com.layzbug.app.data.viewmodel
 
 import android.util.Log
-import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.layzbug.app.FitSyncManager
 import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.repository.WalkRepository
@@ -28,18 +26,20 @@ class MonthViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _currentMonth = MutableStateFlow(YearMonth.now())
-    private val _refreshTrigger = MutableStateFlow(0) // Add refresh trigger
+    private val _refreshTrigger = MutableStateFlow(0)
 
     private val _showSignInPrompt = MutableStateFlow(false)
     val showSignInPrompt: StateFlow<Boolean> = _showSignInPrompt.asStateFlow()
 
+    // Track if user signed in this session to avoid repeated prompts
+    private var hasPromptedSignInThisSession = false
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val walkDays: StateFlow<List<CalendarDayModel>> = combine(
         _currentMonth,
-        _refreshTrigger // Combine with refresh trigger
+        _refreshTrigger
     ) { month, _ -> month }
         .flatMapLatest { month ->
-            // Always fetch from database, don't use cache for display
             walkRepository.getWalksForMonth(month.year, month.monthValue).map { entities ->
                 buildCalendarDays(month, entities)
             }
@@ -98,36 +98,53 @@ class MonthViewModel @Inject constructor(
 
     fun setWalkStatus(date: LocalDate, status: Boolean) {
         viewModelScope.launch {
-            Log.d("MonthViewModel", "Setting walk status for $date to $status")
-            walkRepository.updateWalk(date, status)
+            Log.d("MonthViewModel", "📝 Setting walk status for $date to $status")
+            walkRepository.updateManualWalk(date, status)
 
-            // Trigger refresh after update
             _refreshTrigger.value++
 
-            Log.d("MonthViewModel", "Is logged in: ${authManager.isLoggedIn}")
-            if (!authManager.isLoggedIn) {
-                Log.d("MonthViewModel", "Not logged in, showing prompt after 2s")
+            val isLoggedIn = authManager.isLoggedIn
+            val userId = authManager.currentUserId
+            Log.d("MonthViewModel", "🔐 Auth check - isLoggedIn: $isLoggedIn, userId: $userId")
+
+            // Only show prompt if not logged in AND haven't prompted this session
+            if (!isLoggedIn && !hasPromptedSignInThisSession) {
+                Log.d("MonthViewModel", "⚠️ Not logged in, showing prompt after 2s")
                 kotlinx.coroutines.delay(2000)
                 _showSignInPrompt.value = true
-                Log.d("MonthViewModel", "showSignInPrompt set to: ${_showSignInPrompt.value}")
+                hasPromptedSignInThisSession = true  // Mark as prompted
+                Log.d("MonthViewModel", "✅ showSignInPrompt set to: ${_showSignInPrompt.value}")
             } else {
-                Log.d("MonthViewModel", "Already logged in, skipping prompt")
+                Log.d("MonthViewModel", "✅ Already logged in as $userId OR already prompted, skipping")
             }
         }
     }
 
-    fun launchSignIn(launcher: ActivityResultLauncher<android.content.Intent>) {
+    fun syncAfterSignIn() {
+        viewModelScope.launch {
+            Log.d("MonthViewModel", "🔄 Starting post-login sync...")
+
+
+            // Then pull any data from Firebase we don't have
+            Log.d("MonthViewModel", "📥 Step 2: Pulling Firebase data...")
+            walkRepository.syncFromSupabase()
+
+            // Finally, start listening for real-time changes
+            Log.d("MonthViewModel", "👂 Step 3: Starting real-time listener...")
+            walkRepository.startSupabaseSync()
+
+            Log.d("MonthViewModel", "✅ All sync complete!")
+        }
+    }
+
+    fun launchSignIn(launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>) {
         val signInIntent = authManager.getGoogleSignInClient().signInIntent
         launcher.launch(signInIntent)
     }
 
-    suspend fun signInWithGoogle(account: GoogleSignInAccount) {
+    suspend fun signInWithGoogle(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount): Boolean {
         val result = authManager.signInWithGoogle(account)
-        if (result.isSuccess) {
-            Log.d("MonthViewModel", "Sign in successful, syncing data...")
-            walkRepository.syncFromFirebase()
-            walkRepository.startFirebaseSync()
-        }
+        return result.isSuccess
     }
 
     fun dismissSignInPrompt() {

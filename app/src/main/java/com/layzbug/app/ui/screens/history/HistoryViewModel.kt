@@ -1,4 +1,4 @@
-package com.layzbug.app.ui.screens
+package com.layzbug.app.ui.screens.history
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
