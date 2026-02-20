@@ -145,21 +145,7 @@ fun LayzbugNavHost() {
                 )
             }
 
-            composable(
-                route = "details/{year}/{month}",
-                enterTransition = {
-                    fadeIn(animationSpec = tween(150, easing = LinearEasing))
-                },
-                exitTransition = {
-                    fadeOut(animationSpec = tween(100))
-                },
-                popEnterTransition = {
-                    fadeIn(animationSpec = tween(150))
-                },
-                popExitTransition = {
-                    fadeOut(animationSpec = tween(100))
-                }
-            ) { backStackEntry ->
+            composable(route = "details/{year}/{month}") { backStackEntry ->
                 val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
                 val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
 
