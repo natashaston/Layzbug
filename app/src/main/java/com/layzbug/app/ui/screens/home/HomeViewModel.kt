@@ -7,6 +7,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.layzbug.app.FitSyncManager
+import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.data.repository.WalkRepository
 import com.layzbug.app.domain.StatsValue
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,11 +26,19 @@ data class HomeWalkDay(val label: String, val isWalked: Boolean, val date: Local
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val fitSyncManager: FitSyncManager,
-    private val walkRepository: WalkRepository
+    private val walkRepository: WalkRepository,
+    private val installationTracker: InstallationTracker
 ) : ViewModel() {
 
     private val today = LocalDate.now()
-    private val startOfYear = LocalDate.of(2026, 1, 1)
+
+    // Dynamic: Start from beginning of installation year
+    private val startOfYear = installationTracker.getSyncStartDate()
+
+    // Dynamic: Current year start and end
+    private val currentYearStart = LocalDate.of(today.year, 1, 1)
+    private val currentYearEnd = LocalDate.of(today.year, 12, 31)
+
     private val startOfWeek = today.minusDays(6)
 
     private val _isSyncing = MutableStateFlow(false)
@@ -37,10 +46,19 @@ class HomeViewModel @Inject constructor(
 
     private var hasInitialSyncCompleted = false
 
+    // Refresh trigger to force UI updates after Google Fit sync
+    private val _refreshTrigger = MutableStateFlow(0)
+
     private val requiredPermissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class)
     )
+
+    init {
+        Log.d("LayzbugSync", "📅 Installation date: ${installationTracker.getInstallationDate()}")
+        Log.d("LayzbugSync", "📅 Sync start date: $startOfYear")
+        Log.d("LayzbugSync", "📅 Current year: ${today.year}")
+    }
 
     suspend fun checkPermissions(): Boolean {
         return try {
@@ -53,17 +71,18 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    val yearlyWalks: StateFlow<StatsValue> = walkRepository.getWalksInRange(
-        startOfYear,
-        LocalDate.of(2026, 12, 31)
-    ).map { walks ->
+    // Shows CURRENT YEAR walks, not 2026
+    val yearlyWalks: StateFlow<StatsValue> = combine(
+        walkRepository.getWalksInRange(currentYearStart, currentYearEnd),
+        _refreshTrigger
+    ) { walks, _ ->
         StatsValue(value = walks.count { it.isWalked }, label = "Yearly")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StatsValue(0, "Yearly"))
 
-    val currentMonthWalks: StateFlow<StatsValue> = walkRepository.getWalksForMonth(
-        today.year,
-        today.monthValue
-    ).map { walks ->
+    val currentMonthWalks: StateFlow<StatsValue> = combine(
+        walkRepository.getWalksForMonth(today.year, today.monthValue),
+        _refreshTrigger
+    ) { walks, _ ->
         val monthName = today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
         StatsValue(value = walks.count { it.isWalked }, label = monthName)
     }.stateIn(
@@ -72,18 +91,20 @@ class HomeViewModel @Inject constructor(
         StatsValue(0, today.month.getDisplayName(TextStyle.FULL, Locale.getDefault()))
     )
 
-    val weeklyDays: StateFlow<List<HomeWalkDay>> = walkRepository.getWalksInRange(startOfWeek, today)
-        .map { walks ->
-            (0..6).map { i ->
-                val date = startOfWeek.plusDays(i.toLong())
-                val record = walks.find { it.date == date }
-                HomeWalkDay(
-                    label = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
-                    isWalked = record?.isWalked ?: false,
-                    date = date
-                )
-            }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val weeklyDays: StateFlow<List<HomeWalkDay>> = combine(
+        walkRepository.getWalksInRange(startOfWeek, today),
+        _refreshTrigger
+    ) { walks, _ ->
+        (0..6).map { i ->
+            val date = startOfWeek.plusDays(i.toLong())
+            val record = walks.find { it.date == date }
+            HomeWalkDay(
+                label = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                isWalked = record?.isWalked ?: false,
+                date = date
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         Log.d("LayzbugSync", "HomeViewModel initialized - NOT auto-syncing")
@@ -118,7 +139,6 @@ class HomeViewModel @Inject constructor(
                     walkRepository.syncFromSupabase()
                     walkRepository.startSupabaseSync()
                     Log.d("LayzbugSync", "✅ Now syncing from Google Fit...")
-                    // Continue to Google Fit sync - both can run
                     withTimeout(30_000) {
                         autoSyncSteps()
                     }
@@ -128,6 +148,10 @@ class HomeViewModel @Inject constructor(
                         autoSyncSteps()
                     }
                 }
+
+                // Force UI refresh after sync completes
+                _refreshTrigger.value++
+                Log.d("LayzbugSync", "🔄 Triggered UI refresh")
 
                 hasInitialSyncCompleted = true
                 Log.d("LayzbugSync", "✅ Initial sync complete")
@@ -145,8 +169,9 @@ class HomeViewModel @Inject constructor(
             return
         }
 
+        // Sync from installation year start to today
         val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
-        Log.d("LayzbugSync", "Syncing $daysToSync days from Google Fit...")
+        Log.d("LayzbugSync", "Syncing $daysToSync days from Google Fit (from $startOfYear to $today)...")
 
         var syncedCount = 0
         for (i in 0..daysToSync) {

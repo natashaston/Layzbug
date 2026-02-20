@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.room.Room
 import com.layzbug.app.FitSyncManager
+import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.local.AppDatabase
 import com.layzbug.app.data.local.WalkDao
@@ -46,6 +47,12 @@ object DatabaseModule {
     @Singleton
     fun provideAuthManager(@ApplicationContext context: Context, auth: FirebaseAuth): AuthManager {
         return AuthManager(context, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideInstallationTracker(@ApplicationContext context: Context): InstallationTracker {
+        return InstallationTracker(context)
     }
 
     @Provides

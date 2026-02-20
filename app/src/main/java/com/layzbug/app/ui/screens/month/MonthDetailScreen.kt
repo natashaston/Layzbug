@@ -30,12 +30,16 @@ fun MonthDetailScreen(
     month: Int = YearMonth.now().monthValue,
     viewModel: MonthViewModel = hiltViewModel()
 ) {
-    // Remove manual AuthManager creation - ViewModel has it injected
-
     var showEditSheet by remember { mutableStateOf(false) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
 
     val currentMonth = remember(year, month) { YearMonth.of(year, month) }
+
+    // Load month data BEFORE collecting state to prevent flash
+    LaunchedEffect(currentMonth) {
+        viewModel.loadMonthData(currentMonth)
+    }
+
     val walkDays by viewModel.walkDays.collectAsState()
     val rawMonthStats by viewModel.monthStats.collectAsState()
     val showSignInPrompt by viewModel.showSignInPrompt.collectAsState()
@@ -59,23 +63,22 @@ fun MonthDetailScreen(
 
                     scope.launch {
                         try {
-                            // Call ViewModel method that uses injected AuthManager
                             val success = viewModel.signInWithGoogle(account)
                             if (success) {
-                                Log.d("MonthDetailScreen", "✅ Firebase sign-in successful!")
+                                Log.d("MonthDetailScreen", "✅ Sign-in successful!")
                                 snackbarHostState.showSnackbar("Signed in as ${account.email}")
                                 viewModel.syncAfterSignIn()
                             } else {
-                                Log.e("MonthDetailScreen", "❌ Firebase sign-in failed")
+                                Log.e("MonthDetailScreen", "❌ Sign-in failed")
                                 snackbarHostState.showSnackbar("Sign in failed")
                             }
                         } catch (e: Exception) {
-                            Log.e("MonthDetailScreen", "❌ Exception during Firebase sign-in: ${e.message}", e)
+                            Log.e("MonthDetailScreen", "❌ Exception: ${e.message}", e)
                             snackbarHostState.showSnackbar("Error: ${e.message}")
                         }
                     }
                 } catch (e: ApiException) {
-                    Log.e("MonthDetailScreen", "❌ ApiException: ${e.statusCode} - ${e.message}", e)
+                    Log.e("MonthDetailScreen", "❌ ApiException: ${e.statusCode}", e)
                     scope.launch {
                         snackbarHostState.showSnackbar("Sign in error: ${e.statusCode}")
                     }
@@ -85,16 +88,13 @@ fun MonthDetailScreen(
                 Log.d("MonthDetailScreen", "⚠️ Sign-in cancelled")
             }
             else -> {
-                Log.e("MonthDetailScreen", "❌ Unknown result code: ${result.resultCode}")
+                Log.e("MonthDetailScreen", "❌ Unknown result: ${result.resultCode}")
             }
         }
     }
 
-    // Show sign-in snackbar when triggered
     LaunchedEffect(showSignInPrompt) {
         if (showSignInPrompt) {
-            Log.d("MonthDetailScreen", "📢 Showing sign-in prompt")
-
             val result = snackbarHostState.showSnackbar(
                 message = "Sign in to sync walks across devices",
                 actionLabel = "Sign In",
@@ -102,24 +102,11 @@ fun MonthDetailScreen(
             )
 
             if (result == SnackbarResult.ActionPerformed) {
-                Log.d("MonthDetailScreen", "🚀 User clicked Sign In")
-
-                try {
-                    // Use ViewModel method that has injected AuthManager
-                    viewModel.launchSignIn(signInLauncher)
-                    Log.d("MonthDetailScreen", "✅ Launcher called successfully")
-                } catch (e: Exception) {
-                    Log.e("MonthDetailScreen", "❌ Error launching sign-in", e)
-                    snackbarHostState.showSnackbar("Error: ${e.message}")
-                }
+                viewModel.launchSignIn(signInLauncher)
             }
 
             viewModel.dismissSignInPrompt()
         }
-    }
-
-    LaunchedEffect(currentMonth) {
-        viewModel.loadMonthData(currentMonth)
     }
 
     Scaffold(
