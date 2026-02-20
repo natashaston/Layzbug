@@ -32,22 +32,11 @@ object SupabaseModule {
 
     @Provides
     @Singleton
-    fun provideUserId(@ApplicationContext context: Context): String {
-        // Get the signed-in Google account's ID
-        return try {
-            val account = com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(context)
-            account?.id ?: ""
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    @Provides
-    @Singleton
     fun provideSupabaseRepository(
         supabase: SupabaseClient,
-        userId: String
+        @ApplicationContext context: Context
     ): SupabaseRepository {
-        return SupabaseRepository(supabase, userId)
+        // Pass context instead of userId - repository will get it dynamically
+        return SupabaseRepository(supabase, context)
     }
 }

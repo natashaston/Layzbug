@@ -1,6 +1,8 @@
 package com.layzbug.app.data.repository
 
+import android.content.Context
 import android.util.Log
+import com.google.android.gms.auth.api.signin.GoogleSignIn
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
@@ -22,7 +24,7 @@ data class ManualWalk(
     @SerialName("user_id")
     val userId: String,
     @SerialName("walk_date")
-    val walkDate: String, // Store as YYYY-MM-DD string
+    val walkDate: String,
     @SerialName("is_walked")
     val isWalked: Boolean,
     @SerialName("updated_at")
@@ -32,23 +34,36 @@ data class ManualWalk(
 @Singleton
 class SupabaseRepository @Inject constructor(
     private val supabase: SupabaseClient,
-    private val userId: String? // From Google Sign-In
+    private val context: Context
 ) {
     private val tableName = "manual_walks"
 
-    val isLoggedIn: Boolean get() = !userId.isNullOrEmpty()
+    // Get userId dynamically every time it's needed
+    private val currentUserId: String?
+        get() = try {
+            GoogleSignIn.getLastSignedInAccount(context)?.id
+        } catch (e: Exception) {
+            Log.e("SupabaseRepository", "Failed to get userId: ${e.message}")
+            null
+        }
 
-    /**
-     * Sync a single manual walk to Supabase
-     */
+    val isLoggedIn: Boolean
+        get() {
+            val userId = currentUserId
+            Log.d("SupabaseRepository", "isLoggedIn check - userId: $userId")
+            return !userId.isNullOrEmpty()
+        }
+
     suspend fun syncManualWalk(date: LocalDate, isWalked: Boolean) {
+        val userId = currentUserId
+
         if (userId == null) {
             Log.w("SupabaseRepository", "⚠️ Not logged in, cannot sync $date")
             return
         }
 
         try {
-            Log.d("SupabaseRepository", "🚀 Syncing manual walk: $date = $isWalked")
+            Log.d("SupabaseRepository", "🚀 Syncing manual walk: $date = $isWalked (userId: $userId)")
 
             val walk = ManualWalk(
                 userId = userId,
@@ -56,9 +71,7 @@ class SupabaseRepository @Inject constructor(
                 isWalked = isWalked
             )
 
-            // Upsert (insert or update if exists)
-            supabase.from(tableName).upsert(walk) {
-            }
+            supabase.from(tableName).upsert(walk)
 
             Log.d("SupabaseRepository", "✅ Synced manual walk: $date = $isWalked")
         } catch (e: Exception) {
@@ -66,10 +79,9 @@ class SupabaseRepository @Inject constructor(
         }
     }
 
-    /**
-     * Fetch all manual walks for the current user
-     */
     suspend fun fetchAllManualWalks(): List<ManualWalk> {
+        val userId = currentUserId
+
         if (userId == null) {
             Log.w("SupabaseRepository", "⚠️ Not logged in, cannot fetch walks")
             return emptyList()
@@ -84,7 +96,7 @@ class SupabaseRepository @Inject constructor(
                 }
                 .decodeList<ManualWalk>()
 
-            Log.d("SupabaseRepository", "📦 Fetched ${walks.size} manual walks")
+            Log.d("SupabaseRepository", "📦 Fetched ${walks.size} manual walks for user: $userId")
             walks
         } catch (e: Exception) {
             Log.e("SupabaseRepository", "❌ Failed to fetch walks: ${e.message}", e)
@@ -92,10 +104,9 @@ class SupabaseRepository @Inject constructor(
         }
     }
 
-    /**
-     * Listen for real-time changes to manual walks
-     */
     fun observeManualWalks(): Flow<List<ManualWalk>> {
+        val userId = currentUserId
+
         if (userId == null) {
             Log.w("SupabaseRepository", "⚠️ Not logged in, cannot observe walks")
             return emptyFlow()
@@ -111,8 +122,6 @@ class SupabaseRepository @Inject constructor(
                 }
                 .map { action ->
                     Log.d("SupabaseRepository", "🔔 Received realtime update: ${action::class.simpleName}")
-
-                    // Fetch all walks when any change occurs
                     fetchAllManualWalks()
                 }
         } catch (e: Exception) {
@@ -121,10 +130,9 @@ class SupabaseRepository @Inject constructor(
         }
     }
 
-    /**
-     * Delete a manual walk (if user un-marks a day)
-     */
     suspend fun deleteManualWalk(date: LocalDate) {
+        val userId = currentUserId
+
         if (userId == null) {
             Log.w("SupabaseRepository", "⚠️ Not logged in, cannot delete $date")
             return
