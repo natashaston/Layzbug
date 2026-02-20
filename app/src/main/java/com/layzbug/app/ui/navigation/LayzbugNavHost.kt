@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -125,6 +127,7 @@ fun LayzbugNavHost() {
                         }
                     },
                     onNavigateToMonthDetail = {
+                        // Check if already on month detail screen (any month)
                         if (navController.currentDestination?.route != "details/{year}/{month}") {
                             val now = LocalDate.now()
                             navController.navigate("details/${now.year}/${now.monthValue}")
@@ -160,10 +163,18 @@ fun LayzbugNavHost() {
                 val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
                 val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
 
+                val monthViewModel: com.layzbug.app.data.viewmodel.MonthViewModel = hiltViewModel()
+
+                // Load month data BEFORE MonthDetailScreen composes
+                LaunchedEffect(year, month) {
+                    monthViewModel.loadMonthData(YearMonth.of(year, month))
+                }
+
                 MonthDetailScreen(
                     onBack = { navController.popBackStack() },
                     year = year,
-                    month = month
+                    month = month,
+                    viewModel = monthViewModel
                 )
             }
         }

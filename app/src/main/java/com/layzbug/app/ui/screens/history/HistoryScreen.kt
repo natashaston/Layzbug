@@ -24,8 +24,6 @@ fun HistoryScreen(
     val yearTotal by viewModel.yearTotal.collectAsState()
     val availableYears by viewModel.availableYears.collectAsState()
 
-    val years = (2020..2030).toList()
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -35,10 +33,12 @@ fun HistoryScreen(
         YearlyStatsWithDropdown(
             totalWalks = yearTotal,
             selectedYear = selectedYear,
-            availableYears = availableYears, // Now from ViewModel
+            availableYears = availableYears,
             onYearSelected = { year -> viewModel.setSelectedYear(year) },
-            modifier = Modifier.padding(vertical = Dimens.spaceBase)
+            modifier = Modifier  // Empty modifier, no padding
         )
+
+        Spacer(modifier = Modifier.height(Dimens.spaceBase))
 
         // Months Grid
         LazyVerticalGrid(

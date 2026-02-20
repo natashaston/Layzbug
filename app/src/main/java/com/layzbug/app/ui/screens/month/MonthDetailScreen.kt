@@ -35,9 +35,9 @@ fun MonthDetailScreen(
 
     val currentMonth = remember(year, month) { YearMonth.of(year, month) }
 
-    // Load month data BEFORE collecting state to prevent flash
-    LaunchedEffect(currentMonth) {
-        viewModel.loadMonthData(currentMonth)
+    // Load month data as soon as params change
+    LaunchedEffect(year, month) {
+        viewModel.loadMonthData(YearMonth.of(year, month))
     }
 
     val walkDays by viewModel.walkDays.collectAsState()

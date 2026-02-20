@@ -47,8 +47,8 @@ class MonthViewModel @Inject constructor(
         .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = buildInitialCalendarDays(YearMonth.now())
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
+            initialValue = emptyList()
         )
 
     val monthStats: StateFlow<StatsValue> = walkDays.map { days ->
@@ -60,8 +60,8 @@ class MonthViewModel @Inject constructor(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = buildInitialStats(YearMonth.now())
+        started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
+        initialValue = StatsValue(0, "")
     )
 
     private fun buildCalendarDays(month: YearMonth, entities: List<WalkEntity>): List<CalendarDayModel> {
@@ -124,13 +124,12 @@ class MonthViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d("MonthViewModel", "🔄 Starting post-login sync...")
 
-
-            // Then pull any data from Firebase we don't have
-            Log.d("MonthViewModel", "📥 Step 2: Pulling Firebase data...")
+            // Pull data from Supabase
+            Log.d("MonthViewModel", "📥 Pulling Supabase data...")
             walkRepository.syncFromSupabase()
 
-            // Finally, start listening for real-time changes
-            Log.d("MonthViewModel", "👂 Step 3: Starting real-time listener...")
+            // Start listening for real-time changes
+            Log.d("MonthViewModel", "👂 Starting real-time listener...")
             walkRepository.startSupabaseSync()
 
             Log.d("MonthViewModel", "✅ All sync complete!")
