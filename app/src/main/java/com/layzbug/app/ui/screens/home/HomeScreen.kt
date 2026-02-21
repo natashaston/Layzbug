@@ -23,6 +23,7 @@ import com.layzbug.app.ui.theme.OnPrimary
 import com.layzbug.app.ui.theme.OnSurface
 import com.layzbug.app.ui.theme.Primary
 import com.layzbug.app.ui.theme.SurfaceContainer
+import com.layzbug.app.ui.theme.SurfaceColor
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
@@ -42,6 +43,7 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(SurfaceColor)  // Add solid background to prevent logo bleed-through
             .padding(horizontal = Dimens.spaceBase)
     ) {
         Row(

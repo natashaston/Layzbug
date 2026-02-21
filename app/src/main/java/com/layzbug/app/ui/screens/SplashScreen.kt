@@ -52,10 +52,10 @@ fun SplashScreen(
                 waitTime += 100
             }
 
-            Log.d("SplashScreen", "Sync complete")
+            Log.d("SplashScreen", "Sync complete after ${waitTime}ms")
 
-            // Give time for database writes to complete
-            delay(300)
+            // Give time for database writes and UI refresh
+            delay(500)
         }
 
         // Enforce minimum 1.5s brand presence
@@ -100,7 +100,7 @@ fun SplashScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                // No syncing text - keeps layout stable
+                // No syncing indicator - keeps layout stable
             }
         }
     }

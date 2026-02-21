@@ -1,5 +1,6 @@
 package com.layzbug.app.ui.screens.history
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -11,6 +12,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.layzbug.app.ui.components.MonthCard
 import com.layzbug.app.ui.components.YearlyStatsWithDropdown
 import com.layzbug.app.ui.theme.Dimens
+import com.layzbug.app.ui.theme.SurfaceColor
 
 
 @Composable
@@ -27,6 +29,7 @@ fun HistoryScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(SurfaceColor)  // Add solid background
             .padding(horizontal = 16.dp)
     ) {
         // Yearly Stats Card with Dropdown

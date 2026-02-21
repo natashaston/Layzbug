@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -96,7 +98,10 @@ fun LayzbugNavHost() {
             startDestination = "splash",
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable("splash") {
+            composable(
+                route = "splash",
+                exitTransition = { ExitTransition.None }
+            ) {
                 SplashScreen(
                     viewModel = homeViewModel,
                     onNavigateToPermissions = {
@@ -112,14 +117,22 @@ fun LayzbugNavHost() {
                 )
             }
 
-            composable(Routes.Permission.route) {
+            composable(
+                route = Routes.Permission.route,
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None }
+            ) {
                 PermissionScreen(
                     navController = navController,
                     healthConnectClient = healthConnectClient
                 )
             }
 
-            composable("home") {
+            composable(
+                route = "home",
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None }
+            ) {
                 HomeScreen(
                     onNavigateToHistory = {
                         if (navController.currentDestination?.route != "history") {
@@ -145,7 +158,21 @@ fun LayzbugNavHost() {
                 )
             }
 
-            composable(route = "details/{year}/{month}") { backStackEntry ->
+            composable(
+                route = "details/{year}/{month}",
+                enterTransition = {
+                    fadeIn(animationSpec = tween(150, easing = LinearEasing))
+                },
+                exitTransition = {
+                    fadeOut(animationSpec = tween(100))
+                },
+                popEnterTransition = {
+                    fadeIn(animationSpec = tween(150))
+                },
+                popExitTransition = {
+                    fadeOut(animationSpec = tween(100))
+                }
+            ) { backStackEntry ->
                 val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
                 val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
 

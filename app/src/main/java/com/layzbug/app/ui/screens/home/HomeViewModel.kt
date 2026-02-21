@@ -109,7 +109,7 @@ class HomeViewModel @Inject constructor(
     init {
         Log.d("LayzbugSync", "HomeViewModel initialized - NOT auto-syncing")
 
-        // Start Supabase real-time listener if already logged in
+        // Check if we should auto-sync (coming from permission grant)
         viewModelScope.launch {
             delay(500)
 
@@ -118,6 +118,15 @@ class HomeViewModel @Inject constructor(
                 walkRepository.startSupabaseSync()
             } else {
                 Log.d("LayzbugSync", "⚠️ Not logged in, skipping Supabase listener")
+            }
+
+            // Auto-trigger initial sync if permissions just granted
+            if (!hasInitialSyncCompleted) {
+                val hasPerms = checkPermissions()
+                if (hasPerms) {
+                    Log.d("LayzbugSync", "🎯 Permissions detected, auto-starting sync")
+                    startInitialSync()
+                }
             }
         }
     }
