@@ -150,6 +150,9 @@ class HomeViewModel @Inject constructor(
                 }
 
                 // Force UI refresh after sync completes
+                Log.d("LayzbugSync", "⏳ Waiting for database writes to complete...")
+                delay(1000)  // Give time for all DB writes to commit
+
                 _refreshTrigger.value++
                 Log.d("LayzbugSync", "🔄 Triggered UI refresh")
 

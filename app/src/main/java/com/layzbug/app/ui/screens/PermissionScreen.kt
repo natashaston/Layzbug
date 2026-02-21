@@ -40,15 +40,14 @@ fun PermissionScreen(navController: NavController, healthConnectClient: HealthCo
     val permissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-        "android.permission.health.READ_HEALTH_DATA_HISTORY" // <--- ADD THIS
+        "android.permission.health.READ_HEALTH_DATA_HISTORY"
     )
 
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { grantedPermissions ->
-        // We navigate to Home regardless of the result to allow manual usage,
-        // as per your one-way sync logic.
-        navController.navigate(Routes.Home.route) {
+        // Navigate back to splash so it checks permissions again and triggers sync
+        navController.navigate("splash") {
             popUpTo(Routes.Permission.route) { inclusive = true }
         }
     }

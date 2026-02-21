@@ -34,14 +34,10 @@ fun HomeScreen(
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
 
-    val yearlyWalks by viewModel.yearlyWalks.collectAsState(initial = StatsValue(0, "Yearly"))
-    val currentMonthWalks by viewModel.currentMonthWalks.collectAsState(
-        initial = StatsValue(
-            0,
-            LocalDate.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())
-        )
-    )
-    val weeklyDays by viewModel.weeklyDays.collectAsState(initial = emptyList())
+    // Don't override with initial values - let ViewModel control them
+    val yearlyWalks by viewModel.yearlyWalks.collectAsState()
+    val currentMonthWalks by viewModel.currentMonthWalks.collectAsState()
+    val weeklyDays by viewModel.weeklyDays.collectAsState()
 
     Column(
         modifier = Modifier
