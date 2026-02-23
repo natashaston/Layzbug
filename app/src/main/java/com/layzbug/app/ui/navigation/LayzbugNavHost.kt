@@ -3,12 +3,8 @@ package com.layzbug.app.ui.navigation
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -140,7 +136,6 @@ fun LayzbugNavHost() {
                         }
                     },
                     onNavigateToMonthDetail = {
-                        // Check if already on month detail screen (any month)
                         if (navController.currentDestination?.route != "details/{year}/{month}") {
                             val now = LocalDate.now()
                             navController.navigate("details/${now.year}/${now.monthValue}")
@@ -158,27 +153,12 @@ fun LayzbugNavHost() {
                 )
             }
 
-            composable(
-                route = "details/{year}/{month}",
-                enterTransition = {
-                    fadeIn(animationSpec = tween(150, easing = LinearEasing))
-                },
-                exitTransition = {
-                    fadeOut(animationSpec = tween(100))
-                },
-                popEnterTransition = {
-                    fadeIn(animationSpec = tween(150))
-                },
-                popExitTransition = {
-                    fadeOut(animationSpec = tween(100))
-                }
-            ) { backStackEntry ->
+            composable(route = "details/{year}/{month}") { backStackEntry ->
                 val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
                 val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
 
                 val monthViewModel: com.layzbug.app.data.viewmodel.MonthViewModel = hiltViewModel()
 
-                // Load month data BEFORE MonthDetailScreen composes
                 LaunchedEffect(year, month) {
                     monthViewModel.loadMonthData(YearMonth.of(year, month))
                 }

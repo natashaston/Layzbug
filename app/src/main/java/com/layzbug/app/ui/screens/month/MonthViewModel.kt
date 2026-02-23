@@ -48,7 +48,7 @@ class MonthViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
-            initialValue = emptyList()
+            initialValue = buildInitialCalendarDays(_currentMonth.value)  // Use cached data
         )
 
     val monthStats: StateFlow<StatsValue> = walkDays.map { days ->
@@ -61,7 +61,7 @@ class MonthViewModel @Inject constructor(
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
-        initialValue = StatsValue(0, "")
+        initialValue = buildInitialStats(_currentMonth.value)  // Use cached data instead of 0
     )
 
     private fun buildCalendarDays(month: YearMonth, entities: List<WalkEntity>): List<CalendarDayModel> {

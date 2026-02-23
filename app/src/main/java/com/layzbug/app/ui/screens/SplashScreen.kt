@@ -31,17 +31,14 @@ fun SplashScreen(
     LaunchedEffect(Unit) {
         Log.d("SplashScreen", "🚀 Starting splash screen")
 
-        // Fade in animation
-        alpha.animateTo(1f, animationSpec = tween(500))
-
         val startTime = System.currentTimeMillis()
 
-        // Check permissions
+        // Check permissions FIRST
         val hasPerms = viewModel.checkPermissions()
         Log.d("SplashScreen", "Permissions: $hasPerms")
 
         if (hasPerms) {
-            // Start sync and wait for it
+            // Skip animation, go straight to home after sync
             Log.d("SplashScreen", "Starting sync...")
             viewModel.startInitialSync()
 
@@ -56,19 +53,19 @@ fun SplashScreen(
 
             // Give time for database writes and UI refresh
             delay(500)
-        }
 
-        // Enforce minimum 1.5s brand presence
-        val elapsed = System.currentTimeMillis() - startTime
-        if (elapsed < 1500) {
-            delay(1500 - elapsed)
-        }
-
-        // Navigate
-        Log.d("SplashScreen", "Navigating... hasPerms=$hasPerms")
-        if (hasPerms) {
+            // Navigate immediately without animation
             onSyncComplete()
         } else {
+            // First time - show animation then go to permissions
+            alpha.animateTo(1f, animationSpec = tween(500))
+
+            // Enforce minimum 1.5s brand presence
+            val elapsed = System.currentTimeMillis() - startTime
+            if (elapsed < 1500) {
+                delay(1500 - elapsed)
+            }
+
             onNavigateToPermissions()
         }
     }
