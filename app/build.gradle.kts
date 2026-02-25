@@ -94,10 +94,6 @@ dependencies {
     implementation("io.ktor:ktor-utils:2.3.7")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
 
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth)
-
     // Google Sign-In
     implementation(libs.play.services.auth)
 }

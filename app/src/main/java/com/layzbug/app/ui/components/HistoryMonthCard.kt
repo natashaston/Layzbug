@@ -11,7 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import com.layzbug.app.ui.theme.Dimens
-import com.layzbug.app.ui.theme.OnSurfaceVariant
 import com.layzbug.app.ui.theme.Primary
 import com.layzbug.app.ui.theme.PrimaryContainer
 import com.layzbug.app.ui.theme.SurfaceContainer

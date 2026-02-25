@@ -47,8 +47,8 @@ class MonthViewModel @Inject constructor(
         .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
-            initialValue = buildInitialCalendarDays(_currentMonth.value)  // Use cached data
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList()  // Empty prevents showing wrong month
         )
 
     val monthStats: StateFlow<StatsValue> = walkDays.map { days ->
@@ -60,8 +60,8 @@ class MonthViewModel @Inject constructor(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
-        initialValue = buildInitialStats(_currentMonth.value)  // Use cached data instead of 0
+        started = SharingStarted.Eagerly,  // Keep subscribed
+        initialValue = buildInitialStats(_currentMonth.value)
     )
 
     private fun buildCalendarDays(month: YearMonth, entities: List<WalkEntity>): List<CalendarDayModel> {
@@ -93,6 +93,7 @@ class MonthViewModel @Inject constructor(
     fun loadMonthData(month: YearMonth) {
         if (_currentMonth.value != month) {
             _currentMonth.value = month
+            _refreshTrigger.value++ // Force immediate refresh to clear old data
         }
     }
 

@@ -6,13 +6,17 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
@@ -26,6 +30,7 @@ import com.layzbug.app.ui.screens.month.MonthDetailScreen
 import com.layzbug.app.ui.screens.PermissionScreen
 import com.layzbug.app.ui.screens.SplashScreen
 import com.layzbug.app.ui.theme.SurfaceColor
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
@@ -42,6 +47,18 @@ fun LayzbugNavHost() {
     val healthConnectClient = HealthConnectClient.getOrCreate(context)
     val homeViewModel: HomeViewModel = hiltViewModel()
 
+    // Reactive auth state
+    val authManager = remember { com.layzbug.app.data.auth.AuthManager(context) }
+    var isLoggedIn by remember { mutableStateOf(authManager.isLoggedIn) }
+
+    // Update auth state when drawer opens
+    LaunchedEffect(Unit) {
+        snapshotFlow { isLoggedIn }
+    }
+
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
     val showTopBar = currentRoute != "splash" && currentRoute != Routes.Permission.route
     val topBarAlpha by animateFloatAsState(
         targetValue = if (showTopBar) 1f else 0f,
@@ -49,126 +66,180 @@ fun LayzbugNavHost() {
         label = "topBarAlpha"
     )
 
-    Scaffold(
-        containerColor = SurfaceColor,
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = when {
-                                currentRoute?.startsWith("details") == true -> {
-                                    val year = navBackStackEntry?.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
-                                    val month = navBackStackEntry?.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
-                                    YearMonth.of(year, month).month.getDisplayName(TextStyle.FULL, Locale.getDefault())
-                                }
-                                currentRoute == "history" -> "History"
-                                else -> "Layzbug"
-                            },
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    },
-                    navigationIcon = {
-                        if (currentRoute != "home" && currentRoute != null) {
-                            IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = SurfaceColor,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.graphicsLayer { alpha = topBarAlpha }
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surface
+            ) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Layzbug",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
                 )
+
+                HorizontalDivider()
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Only show logout when logged in
+                if (isLoggedIn) {
+                    NavigationDrawerItem(
+                        label = { Text("Logout") },
+                        selected = false,
+                        onClick = {
+                            scope.launch {
+                                authManager.signOut()
+                                isLoggedIn = false
+                                drawerState.close()
+                                // Stay on current screen, don't navigate away
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
             }
         }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = "splash",
-            modifier = Modifier.padding(innerPadding)
-        ) {
-            composable(
-                route = "splash",
-                exitTransition = { ExitTransition.None }
+    ) {
+        Scaffold(
+            containerColor = SurfaceColor,
+            topBar = {
+                if (showTopBar) {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = when {
+                                    currentRoute?.startsWith("details") == true -> {
+                                        val year = navBackStackEntry?.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
+                                        val month = navBackStackEntry?.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
+                                        YearMonth.of(year, month).month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+                                    }
+                                    currentRoute == "history" -> "History"
+                                    else -> "Layzbug"
+                                },
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        },
+                        navigationIcon = {
+                            if (currentRoute == "home" && isLoggedIn) {
+                                // Hamburger menu only when logged in
+                                IconButton(onClick = {
+                                    scope.launch { drawerState.open() }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Menu,
+                                        contentDescription = "Menu",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            } else if (currentRoute != "home" && currentRoute != null) {
+                                // Back button on other screens
+                                IconButton(onClick = { navController.popBackStack() }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = SurfaceColor,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.graphicsLayer { alpha = topBarAlpha }
+                    )
+                }
+            }
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = "splash",
+                modifier = Modifier.padding(innerPadding)
             ) {
-                SplashScreen(
-                    viewModel = homeViewModel,
-                    onNavigateToPermissions = {
-                        navController.navigate(Routes.Permission.route) {
-                            popUpTo("splash") { inclusive = true }
+                composable(
+                    route = "splash",
+                    exitTransition = { ExitTransition.None }
+                ) {
+                    SplashScreen(
+                        viewModel = homeViewModel,
+                        onNavigateToPermissions = {
+                            navController.navigate(Routes.Permission.route) {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        },
+                        onSyncComplete = {
+                            navController.navigate("home") {
+                                popUpTo("splash") { inclusive = true }
+                            }
                         }
-                    },
-                    onSyncComplete = {
-                        navController.navigate("home") {
-                            popUpTo("splash") { inclusive = true }
-                        }
-                    }
-                )
-            }
-
-            composable(
-                route = Routes.Permission.route,
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None }
-            ) {
-                PermissionScreen(
-                    navController = navController,
-                    healthConnectClient = healthConnectClient
-                )
-            }
-
-            composable(
-                route = "home",
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None }
-            ) {
-                HomeScreen(
-                    onNavigateToHistory = {
-                        if (navController.currentDestination?.route != "history") {
-                            navController.navigate("history")
-                        }
-                    },
-                    onNavigateToMonthDetail = {
-                        if (navController.currentDestination?.route != "details/{year}/{month}") {
-                            val now = LocalDate.now()
-                            navController.navigate("details/${now.year}/${now.monthValue}")
-                        }
-                    }
-                )
-            }
-
-            composable("history") {
-                HistoryScreen(
-                    onBack = { navController.popBackStack() },
-                    onNavigateToMonth = { year: Int, month: Int ->
-                        navController.navigate("details/$year/$month")
-                    }
-                )
-            }
-
-            composable(route = "details/{year}/{month}") { backStackEntry ->
-                val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
-                val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
-
-                val monthViewModel: com.layzbug.app.data.viewmodel.MonthViewModel = hiltViewModel()
-
-                LaunchedEffect(year, month) {
-                    monthViewModel.loadMonthData(YearMonth.of(year, month))
+                    )
                 }
 
-                MonthDetailScreen(
-                    onBack = { navController.popBackStack() },
-                    year = year,
-                    month = month,
-                    viewModel = monthViewModel
-                )
+                composable(
+                    route = Routes.Permission.route,
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None }
+                ) {
+                    PermissionScreen(
+                        navController = navController,
+                        healthConnectClient = healthConnectClient
+                    )
+                }
+
+                composable(
+                    route = "home",
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None }
+                ) {
+                    HomeScreen(
+                        onNavigateToHistory = {
+                            if (navController.currentDestination?.route != "history") {
+                                navController.navigate("history")
+                            }
+                        },
+                        onNavigateToMonthDetail = {
+                            if (navController.currentDestination?.route != "details/{year}/{month}") {
+                                val now = LocalDate.now()
+                                navController.navigate("details/${now.year}/${now.monthValue}")
+                            }
+                        },
+                        isLoggedIn = isLoggedIn,
+                        onSignInSuccess = {
+                            isLoggedIn = true  // Update auth state
+                        }
+                    )
+                }
+
+                composable("history") {
+                    HistoryScreen(
+                        onBack = { navController.popBackStack() },
+                        onNavigateToMonth = { year: Int, month: Int ->
+                            navController.navigate("details/$year/$month")
+                        }
+                    )
+                }
+
+                composable(route = "details/{year}/{month}") { backStackEntry ->
+                    val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
+                    val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
+
+                    val monthViewModel: com.layzbug.app.data.viewmodel.MonthViewModel = hiltViewModel()
+
+                    LaunchedEffect(year, month) {
+                        monthViewModel.loadMonthData(YearMonth.of(year, month))
+                    }
+
+                    MonthDetailScreen(
+                        onBack = { navController.popBackStack() },
+                        year = year,
+                        month = month,
+                        viewModel = monthViewModel
+                    )
+                }
             }
         }
     }

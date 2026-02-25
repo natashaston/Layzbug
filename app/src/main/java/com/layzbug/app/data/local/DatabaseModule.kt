@@ -10,7 +10,6 @@ import com.layzbug.app.data.local.AppDatabase
 import com.layzbug.app.data.local.WalkDao
 import com.layzbug.app.data.repository.SupabaseRepository
 import com.layzbug.app.data.repository.WalkRepository
-import com.google.firebase.auth.FirebaseAuth
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -39,14 +38,10 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideFirebaseAuth(): FirebaseAuth {
-        return FirebaseAuth.getInstance()
-    }
-
-    @Provides
-    @Singleton
-    fun provideAuthManager(@ApplicationContext context: Context, auth: FirebaseAuth): AuthManager {
-        return AuthManager(context, auth)
+    fun provideAuthManager(
+        @ApplicationContext context: Context  // ADD THIS
+    ): AuthManager {
+        return AuthManager(context)
     }
 
     @Provides
