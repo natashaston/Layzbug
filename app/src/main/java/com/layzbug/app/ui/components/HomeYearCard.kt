@@ -14,15 +14,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.layzbug.app.ui.theme.Dimens
+import com.layzbug.app.ui.theme.Primary
+import com.layzbug.app.ui.theme.PrimaryContainer
 
 @Composable
 fun StatsCard(
     number: String,
     label: String,
+    distanceKm: Double = 0.0,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
@@ -33,7 +35,7 @@ fun StatsCard(
             .height(238.dp),
         shape = RoundedCornerShape(Dimens.radius5xl),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFE9DDFF)
+            containerColor = PrimaryContainer
         ),
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
@@ -48,7 +50,16 @@ fun StatsCard(
             Text(
                 text = number,
                 style = MaterialTheme.typography.displayLarge,
-                color = Color(0xFF65558F)
+                color = Primary
+            )
+
+            Spacer(modifier = Modifier.height(Dimens.spaceXxs))
+
+            Text(
+                text = formatDistance(distanceKm),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Primary.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(Dimens.spaceBase))
@@ -56,11 +67,22 @@ fun StatsCard(
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFF65558F),
+                color = Primary,
                 textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.weight(1f))
         }
+    }
+}
+
+/** Format distance: show "12.3 km" or "0 km" */
+internal fun formatDistance(km: Double): String {
+    return if (km >= 10) {
+        "${Math.round(km)} km"
+    } else if (km >= 0.1) {
+        "${"%.1f".format(km)} km"
+    } else {
+        "0 km"
     }
 }

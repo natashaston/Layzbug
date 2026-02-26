@@ -15,10 +15,12 @@ interface WalkDao {
     @Query("SELECT isWalked FROM walks WHERE date = :date LIMIT 1")
     suspend fun getWalkStatus(date: LocalDate): Boolean?
 
+    @Query("SELECT * FROM walks WHERE date = :date LIMIT 1")
+    suspend fun getWalkByDate(date: LocalDate): WalkEntity?
+
     @Upsert
     suspend fun upsertWalk(walk: WalkEntity)
 
-    // NEW: Get distinct years from walks table
     @Query("SELECT DISTINCT substr(date, 1, 4) FROM walks ORDER BY date DESC")
     fun getDistinctYears(): Flow<List<String>>
 }

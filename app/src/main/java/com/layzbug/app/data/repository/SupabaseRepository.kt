@@ -27,6 +27,8 @@ data class ManualWalk(
     val walkDate: String,
     @SerialName("is_walked")
     val isWalked: Boolean,
+    @SerialName("distance_km")
+    val distanceKm: Double = 0.0,
     @SerialName("updated_at")
     val updatedAt: String? = null
 )
@@ -54,7 +56,7 @@ class SupabaseRepository @Inject constructor(
             return !userId.isNullOrEmpty()
         }
 
-    suspend fun syncManualWalk(date: LocalDate, isWalked: Boolean) {
+    suspend fun syncManualWalk(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0) {
         val userId = currentUserId
 
         if (userId == null) {
@@ -63,17 +65,18 @@ class SupabaseRepository @Inject constructor(
         }
 
         try {
-            Log.d("SupabaseRepository", "🚀 Syncing manual walk: $date = $isWalked (userId: $userId)")
+            Log.d("SupabaseRepository", "🚀 Syncing manual walk: $date = $isWalked, ${distanceKm}km (userId: $userId)")
 
             val walk = ManualWalk(
                 userId = userId,
                 walkDate = date.toString(),
-                isWalked = isWalked
+                isWalked = isWalked,
+                distanceKm = distanceKm
             )
 
             supabase.from(tableName).upsert(walk)
 
-            Log.d("SupabaseRepository", "✅ Synced manual walk: $date = $isWalked")
+            Log.d("SupabaseRepository", "✅ Synced manual walk: $date = $isWalked, ${distanceKm}km")
         } catch (e: Exception) {
             Log.e("SupabaseRepository", "❌ Failed to sync $date: ${e.message}", e)
         }

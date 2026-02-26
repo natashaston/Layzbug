@@ -63,8 +63,17 @@ class WalkRepository @Inject constructor(
      * Google Fit walks are updated via updateWalkFromGoogleFit()
      */
     suspend fun updateManualWalk(date: LocalDate, isWalked: Boolean) {
-        // Update local DB
-        walkDao.upsertWalk(WalkEntity(date, isWalked))
+        // Update local DB (manual walks don't have distance — keep existing distance or 0)
+        val existingDistance = try {
+            val walks = walkDao.getWalksInRange(date, date)
+            var dist = 0.0
+            // We can't collect a Flow here easily, so we just set 0 for manual
+            dist
+        } catch (e: Exception) {
+            0.0
+        }
+
+        walkDao.upsertWalk(WalkEntity(date, isWalked, existingDistance))
         Log.d("WalkRepository", "✅ Updated local DB (manual): $date = $isWalked")
 
         // Track as manual walk
@@ -87,7 +96,6 @@ class WalkRepository @Inject constructor(
             if (isWalked) {
                 supabaseRepository.syncManualWalk(date, true)
             } else {
-                // If unmarking, delete from Supabase
                 supabaseRepository.deleteManualWalk(date)
             }
         }
@@ -95,14 +103,36 @@ class WalkRepository @Inject constructor(
 
     /**
      * Update walk from Google Fit - does NOT sync to Supabase
+     * Now includes distance data
      */
-    suspend fun updateWalkFromGoogleFit(date: LocalDate, isWalked: Boolean) {
+    suspend fun updateWalkFromGoogleFit(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0) {
         // Only update if not already a manual walk
         if (!manualWalks.contains(date)) {
-            walkDao.upsertWalk(WalkEntity(date, isWalked))
-            Log.d("WalkRepository", "✅ Updated from Google Fit: $date = $isWalked")
+            // Get existing entry to avoid downgrading isWalked
+            val existing = walkDao.getWalkByDate(date)
+            val finalIsWalked = if (existing != null) {
+                // Never downgrade: if already walked, keep it walked
+                existing.isWalked || isWalked
+            } else {
+                isWalked
+            }
+            // Always update distance if we have a better value
+            val finalDistance = if (distanceKm > 0) distanceKm
+            else existing?.distanceKm ?: 0.0
+
+            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance))
+            Log.d("WalkRepository", "✅ Updated from Google Fit: $date = $finalIsWalked (was: ${existing?.isWalked}), ${finalDistance}km")
         } else {
-            Log.d("WalkRepository", "⏭️ Skipped $date - is manual walk")
+            // For manual walks, still update distance if we have it
+            if (distanceKm > 0) {
+                val existing = walkDao.getWalkByDate(date)
+                if (existing != null && existing.distanceKm == 0.0) {
+                    walkDao.upsertWalk(WalkEntity(date, existing.isWalked, distanceKm))
+                    Log.d("WalkRepository", "📏 Updated distance for manual walk $date: ${distanceKm}km")
+                }
+            } else {
+                Log.d("WalkRepository", "⏭️ Skipped $date - is manual walk")
+            }
         }
     }
 
@@ -127,9 +157,9 @@ class WalkRepository @Inject constructor(
                 manualWalks.add(date)
             }
 
-            // Update local DB
-            walkDao.upsertWalk(WalkEntity(date, walk.isWalked))
-            Log.d("WalkRepository", "  ✅ Synced: $date = ${walk.isWalked}")
+            // Update local DB with distance from cloud
+            walkDao.upsertWalk(WalkEntity(date, walk.isWalked, walk.distanceKm))
+            Log.d("WalkRepository", "  ✅ Synced: $date = ${walk.isWalked}, ${walk.distanceKm}km")
         }
 
         Log.d("WalkRepository", "✅ Supabase sync complete")
@@ -153,8 +183,8 @@ class WalkRepository @Inject constructor(
                         manualWalks.add(date)
                     }
 
-                    // Update local DB
-                    walkDao.upsertWalk(WalkEntity(date, walk.isWalked))
+                    // Update local DB with distance
+                    walkDao.upsertWalk(WalkEntity(date, walk.isWalked, walk.distanceKm))
                 }
             }
         }

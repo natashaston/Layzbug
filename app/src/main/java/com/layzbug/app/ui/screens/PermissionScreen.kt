@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.navigation.NavController
@@ -39,7 +40,9 @@ fun PermissionScreen(
 
     val permissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(ExerciseSessionRecord::class)
+        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        HealthPermission.getReadPermission(DistanceRecord::class),
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
     )
 
     // Animate logo sliding up after initial delay
@@ -69,7 +72,8 @@ fun PermissionScreen(
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { grantedPermissions ->
-        Log.d("PermissionScreen", "Permissions granted, navigating to home")
+        Log.d("PermissionScreen", "Granted permissions: $grantedPermissions")
+        Log.d("PermissionScreen", "Navigating to home")
         navController.navigate("home") {
             popUpTo(Routes.Permission.route) { inclusive = true }
         }

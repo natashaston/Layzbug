@@ -6,6 +6,7 @@ import java.time.LocalDate
 
 @Entity(tableName = "walks")
 data class WalkEntity(
-    @PrimaryKey val date: LocalDate, // Room will use your Converters to save this as a String
-    val isWalked: Boolean
+    @PrimaryKey val date: LocalDate,
+    val isWalked: Boolean,
+    val distanceKm: Double = 0.0
 )

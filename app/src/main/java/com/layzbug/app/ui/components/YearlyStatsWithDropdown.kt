@@ -18,6 +18,7 @@ import com.layzbug.app.ui.theme.OnPrimary
 @Composable
 fun YearlyStatsWithDropdown(
     totalWalks: Int,
+    totalDistanceKm: Double = 0.0,
     selectedYear: Int,
     availableYears: List<Int>,
     onYearSelected: (Int) -> Unit,
@@ -55,6 +56,15 @@ fun YearlyStatsWithDropdown(
                     text = totalWalks.toString(),
                     style = MaterialTheme.typography.displayLarge,
                     color = Primary
+                )
+
+                Spacer(modifier = Modifier.height(Dimens.spaceXxs))
+
+                Text(
+                    text = formatDistance(totalDistanceKm),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Primary.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Start
                 )
 
                 Spacer(modifier = Modifier.height(Dimens.spaceXxs))

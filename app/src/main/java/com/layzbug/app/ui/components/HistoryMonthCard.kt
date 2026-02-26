@@ -19,6 +19,7 @@ import com.layzbug.app.ui.theme.SurfaceContainer
 fun MonthCard(
     monthName: String,
     walkCount: Int,
+    distanceKm: Double = 0.0,
     isEnabled: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
@@ -42,16 +43,25 @@ fun MonthCard(
             Text(
                 text = walkCount.toString(),
                 style = MaterialTheme.typography.displayMedium,
-                color = if (isEnabled) Primary else Primary.copy(alpha = 0.38f), // Material Design disabled alpha
+                color = if (isEnabled) Primary else Primary.copy(alpha = 0.38f),
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(Dimens.spaceXs))
+            Spacer(modifier = Modifier.height(Dimens.spaceXxs))
+
+            Text(
+                text = formatDistance(distanceKm),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isEnabled) Primary.copy(alpha = 0.7f) else Primary.copy(alpha = 0.28f),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(Dimens.spaceXxs))
 
             Text(
                 text = monthName,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isEnabled) Primary else Primary.copy(alpha = 0.38f), // Material Design disabled alpha
+                color = if (isEnabled) Primary else Primary.copy(alpha = 0.38f),
                 textAlign = TextAlign.Center
             )
         }

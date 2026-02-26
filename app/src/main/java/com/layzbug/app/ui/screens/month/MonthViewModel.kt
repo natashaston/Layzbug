@@ -51,18 +51,29 @@ class MonthViewModel @Inject constructor(
             initialValue = emptyList()  // Empty prevents showing wrong month
         )
 
-    val monthStats: StateFlow<StatsValue> = walkDays.map { days ->
-        val count = days.count { it.walked }
-        val monthName = _currentMonth.value.month.name.lowercase().replaceFirstChar { it.uppercase() }
-        StatsValue(
-            value = count,
-            label = "Walks in $monthName"
+    // Now includes distance from walk entities
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val monthStats: StateFlow<StatsValue> = combine(
+        _currentMonth,
+        _refreshTrigger
+    ) { month, _ -> month }
+        .flatMapLatest { month ->
+            walkRepository.getWalksForMonth(month.year, month.monthValue).map { entities ->
+                val count = entities.count { it.isWalked }
+                val distanceKm = Math.round(entities.sumOf { it.distanceKm } * 10.0) / 10.0
+                val monthName = month.month.name.lowercase().replaceFirstChar { it.uppercase() }
+                StatsValue(
+                    value = count,
+                    label = "Walks in $monthName",
+                    distanceKm = distanceKm
+                )
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = buildInitialStats(_currentMonth.value)
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,  // Keep subscribed
-        initialValue = buildInitialStats(_currentMonth.value)
-    )
 
     private fun buildCalendarDays(month: YearMonth, entities: List<WalkEntity>): List<CalendarDayModel> {
         return (1..month.lengthOfMonth()).map { day ->
@@ -86,8 +97,9 @@ class MonthViewModel @Inject constructor(
     private fun buildInitialStats(month: YearMonth): StatsValue {
         val cached = walkRepository.getCachedMonthData(month.year, month.monthValue)
         val count = cached?.count { it.isWalked } ?: 0
+        val distanceKm = Math.round((cached?.sumOf { it.distanceKm } ?: 0.0) * 10.0) / 10.0
         val monthName = month.month.name.lowercase().replaceFirstChar { it.uppercase() }
-        return StatsValue(value = count, label = "Walks in $monthName")
+        return StatsValue(value = count, label = "Walks in $monthName", distanceKm = distanceKm)
     }
 
     fun loadMonthData(month: YearMonth) {

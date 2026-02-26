@@ -24,6 +24,7 @@ fun HistoryScreen(
     val selectedYear by viewModel.selectedYear.collectAsState()
     val monthsStats by viewModel.monthsStats.collectAsState()
     val yearTotal by viewModel.yearTotal.collectAsState()
+    val yearDistanceKm by viewModel.yearDistanceKm.collectAsState()
     val availableYears by viewModel.availableYears.collectAsState()
 
     Column(
@@ -35,6 +36,7 @@ fun HistoryScreen(
         // Yearly Stats Card with Dropdown
         YearlyStatsWithDropdown(
             totalWalks = yearTotal,
+            totalDistanceKm = yearDistanceKm,
             selectedYear = selectedYear,
             availableYears = availableYears,
             onYearSelected = { year -> viewModel.setSelectedYear(year) },
@@ -54,6 +56,7 @@ fun HistoryScreen(
                 MonthCard(
                     monthName = monthStat.monthName,
                     walkCount = monthStat.walkCount,
+                    distanceKm = monthStat.distanceKm,
                     isEnabled = monthStat.isEnabled,
                     onClick = {
                         if (monthStat.isEnabled) {

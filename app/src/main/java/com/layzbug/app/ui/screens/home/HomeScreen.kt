@@ -1,6 +1,7 @@
 package com.layzbug.app.ui.screens.home
 
 import android.app.Activity
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -47,7 +48,6 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Don't override with initial values - let ViewModel control them
     val yearlyWalks by viewModel.yearlyWalks.collectAsState()
     val currentMonthWalks by viewModel.currentMonthWalks.collectAsState()
     val weeklyDays by viewModel.weeklyDays.collectAsState()
@@ -124,9 +124,15 @@ fun HomeScreen(
 
                     Button(
                         onClick = {
+                            Log.d("SignInDebug", "🔘 Button clicked at ${System.currentTimeMillis()}")
                             val authManager = com.layzbug.app.data.auth.AuthManager(context)
-                            val signInIntent = authManager.getGoogleSignInClient().signInIntent
+                            Log.d("SignInDebug", "🔧 AuthManager created at ${System.currentTimeMillis()}")
+                            val client = authManager.getGoogleSignInClient()
+                            Log.d("SignInDebug", "📱 GoogleSignInClient created at ${System.currentTimeMillis()}")
+                            val signInIntent = client.signInIntent
+                            Log.d("SignInDebug", "📝 signInIntent created at ${System.currentTimeMillis()}")
                             signInLauncher.launch(signInIntent)
+                            Log.d("SignInDebug", "🚀 launch() called at ${System.currentTimeMillis()}")
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
@@ -150,6 +156,7 @@ fun HomeScreen(
             StatsCard(
                 number = yearlyWalks.value.toString(),
                 label = yearlyWalks.label,
+                distanceKm = yearlyWalks.distanceKm,
                 modifier = Modifier.weight(1f).graphicsLayer(),
                 onClick = onNavigateToHistory
             )

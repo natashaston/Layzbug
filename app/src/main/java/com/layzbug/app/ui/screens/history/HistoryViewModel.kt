@@ -15,6 +15,7 @@ data class MonthStats(
     val month: Int,
     val monthName: String,
     val walkCount: Int,
+    val distanceKm: Double = 0.0,
     val isEnabled: Boolean
 )
 
@@ -50,6 +51,7 @@ class HistoryViewModel @Inject constructor(
                         month = month,
                         monthName = monthName,
                         walkCount = walks.count { it.isWalked },
+                        distanceKm = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0,
                         isEnabled = if (year == currentYear) month <= currentMonth else year < currentYear
                     )
                 }
@@ -70,6 +72,19 @@ class HistoryViewModel @Inject constructor(
             (1..12).sumOf { month ->
                 walkRepository.getCachedMonthData(currentYear, month)?.count { it.isWalked } ?: 0
             }
+        }
+    )
+
+    val yearDistanceKm: StateFlow<Double> = monthsStats.map { months ->
+        Math.round(months.sumOf { it.distanceKm } * 10.0) / 10.0
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = run {
+            val total = (1..12).sumOf { month ->
+                walkRepository.getCachedMonthData(currentYear, month)?.sumOf { it.distanceKm } ?: 0.0
+            }
+            Math.round(total * 10.0) / 10.0
         }
     )
 
@@ -105,6 +120,7 @@ class HistoryViewModel @Inject constructor(
                 month = month,
                 monthName = monthName,
                 walkCount = cached?.count { it.isWalked } ?: 0,
+                distanceKm = Math.round((cached?.sumOf { it.distanceKm } ?: 0.0) * 10.0) / 10.0,
                 isEnabled = if (year == currentYear) month <= currentMonth else year < currentYear
             )
         }

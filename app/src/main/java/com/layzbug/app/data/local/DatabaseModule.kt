@@ -7,6 +7,7 @@ import com.layzbug.app.FitSyncManager
 import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.local.AppDatabase
+import com.layzbug.app.data.local.MIGRATION_1_2
 import com.layzbug.app.data.local.WalkDao
 import com.layzbug.app.data.repository.SupabaseRepository
 import com.layzbug.app.data.repository.WalkRepository
@@ -28,7 +29,9 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "layzbug_db"
-        ).build()
+        )
+            .addMigrations(MIGRATION_1_2)
+            .build()
     }
 
     @Provides
@@ -39,7 +42,7 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideAuthManager(
-        @ApplicationContext context: Context  // ADD THIS
+        @ApplicationContext context: Context
     ): AuthManager {
         return AuthManager(context)
     }

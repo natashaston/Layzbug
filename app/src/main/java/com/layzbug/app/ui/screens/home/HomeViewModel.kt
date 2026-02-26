@@ -2,6 +2,7 @@ package com.layzbug.app.ui.screens.home
 
 import android.util.Log
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.lifecycle.ViewModel
@@ -14,6 +15,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -44,6 +47,10 @@ class HomeViewModel @Inject constructor(
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
+    // Debug: visible sync status for troubleshooting
+    private val _syncStatus = MutableStateFlow("")
+    val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
+
     private var hasInitialSyncCompleted = false
 
     // Refresh trigger to force UI updates after Google Fit sync
@@ -51,7 +58,9 @@ class HomeViewModel @Inject constructor(
 
     private val requiredPermissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(ExerciseSessionRecord::class)
+        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        HealthPermission.getReadPermission(DistanceRecord::class),
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
     )
 
     init {
@@ -71,12 +80,14 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    // Shows CURRENT YEAR walks, not 2026
+    // Shows CURRENT YEAR walks + distance
     val yearlyWalks: StateFlow<StatsValue> = combine(
         walkRepository.getWalksInRange(currentYearStart, currentYearEnd),
         _refreshTrigger
     ) { walks, _ ->
-        StatsValue(value = walks.count { it.isWalked }, label = "Yearly")
+        val walkCount = walks.count { it.isWalked }
+        val totalDistance = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0
+        StatsValue(value = walkCount, label = "Yearly", distanceKm = totalDistance)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StatsValue(0, "Yearly"))
 
     val currentMonthWalks: StateFlow<StatsValue> = combine(
@@ -84,7 +95,9 @@ class HomeViewModel @Inject constructor(
         _refreshTrigger
     ) { walks, _ ->
         val monthName = today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
-        StatsValue(value = walks.count { it.isWalked }, label = monthName)
+        val walkCount = walks.count { it.isWalked }
+        val totalDistance = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0
+        StatsValue(value = walkCount, label = monthName, distanceKm = totalDistance)
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -142,19 +155,21 @@ class HomeViewModel @Inject constructor(
             try {
                 Log.d("LayzbugSync", "🚀 Starting initial sync...")
 
-                // Check if Supabase is active
-                if (walkRepository.isSupabaseLoggedIn()) {
-                    Log.d("LayzbugSync", "✅ Supabase is active, syncing manual walks...")
-                    walkRepository.syncFromSupabase()
-                    walkRepository.startSupabaseSync()
-                    Log.d("LayzbugSync", "✅ Now syncing from Google Fit...")
-                    withTimeout(30_000) {
-                        autoSyncSteps()
-                    }
-                } else {
-                    Log.d("LayzbugSync", "⚠️ Not logged in, syncing from Google Fit...")
-                    withTimeout(30_000) {
-                        autoSyncSteps()
+                withContext(Dispatchers.IO) {
+                    // Check if Supabase is active
+                    if (walkRepository.isSupabaseLoggedIn()) {
+                        Log.d("LayzbugSync", "✅ Supabase is active, syncing manual walks...")
+                        walkRepository.syncFromSupabase()
+                        walkRepository.startSupabaseSync()
+                        Log.d("LayzbugSync", "✅ Now syncing from Google Fit...")
+                        withTimeout(120_000) {
+                            autoSyncSteps()
+                        }
+                    } else {
+                        Log.d("LayzbugSync", "⚠️ Not logged in, syncing from Google Fit...")
+                        withTimeout(120_000) {
+                            autoSyncSteps()
+                        }
                     }
                 }
 
@@ -178,33 +193,56 @@ class HomeViewModel @Inject constructor(
     private suspend fun autoSyncSteps() {
         if (!checkPermissions()) {
             Log.w("LayzbugSync", "⚠️ Aborting sync: Permissions not granted")
+            _syncStatus.value = "❌ Permissions not granted"
             return
         }
 
         // Sync from installation year start to today
         val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
         Log.d("LayzbugSync", "Syncing $daysToSync days from Google Fit (from $startOfYear to $today)...")
+        _syncStatus.value = "Syncing $daysToSync days..."
 
         var syncedCount = 0
-        for (i in 0..daysToSync) {
+        var checkedCount = 0
+        var errorCount = 0
+        val debugLines = mutableListOf<String>()
+
+        // Sync in REVERSE order (most recent first) so today/this week gets priority
+        for (i in daysToSync downTo 0) {
             val date = startOfYear.plusDays(i)
+            checkedCount++
 
             try {
-                val isWalkedInDb = walkRepository.getWalkStatus(date)
+                // Use new checkDailyWalk which returns both status and distance
+                val result = fitSyncManager.checkDailyWalk(date)
 
-                if (!isWalkedInDb) {
-                    val hasMetGoal = fitSyncManager.checkWalkingGoal(date)
-                    if (hasMetGoal) {
-                        walkRepository.updateWalkFromGoogleFit(date, true)
-                        syncedCount++
-                        delay(50)
-                    }
+                if (result.isWalked || result.distanceKm > 0) {
+                    // Always update if there's walk data or distance data from Health Connect
+                    walkRepository.updateWalkFromGoogleFit(date, result.isWalked, result.distanceKm)
+                    if (result.isWalked) syncedCount++
+                    debugLines.add("${if (result.isWalked) "✅" else "📏"} $date: walked=${result.isWalked}, ${result.totalMinutes}min, ${result.sessionCount}sess, ${result.distanceKm}km")
+                    delay(50)
+                } else {
+                    debugLines.add("⬜ $date: 0sess, 0km")
+                }
+
+                // Update visible status every 5 days
+                if (checkedCount % 5 == 0) {
+                    _syncStatus.value = "Checked $checkedCount/$daysToSync days, found $syncedCount walks"
                 }
             } catch (e: Exception) {
+                errorCount++
+                debugLines.add("❌ $date: ${e.message}")
                 Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
             }
         }
 
+        // Final status with full detail - show only current month for readability
+        val febLines = debugLines.filter { it.contains("2026-02") }
+        val summary = "Done: $syncedCount walks from $checkedCount days ($errorCount errors)\n" +
+                "=== FEBRUARY ===\n" +
+                febLines.joinToString("\n")
+        _syncStatus.value = summary
         Log.d("LayzbugSync", "✅ Synced $syncedCount new walks from Google Fit")
     }
 

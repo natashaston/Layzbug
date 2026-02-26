@@ -52,6 +52,15 @@ fun StatsCardPill(
                 color = Primary
             )
 
+            Spacer(modifier = Modifier.height(Dimens.spaceXxs))
+
+            Text(
+                text = formatDistance(stats.distanceKm),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Primary.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
+
             Spacer(modifier = Modifier.height(Dimens.spaceBase))
 
             Text(
