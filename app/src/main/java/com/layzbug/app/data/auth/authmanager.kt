@@ -6,6 +6,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,8 +40,6 @@ class AuthManager @Inject constructor(
 
     suspend fun signInWithGoogle(account: GoogleSignInAccount): Result<Unit> {
         return try {
-            // Google account is already signed in at this point
-            // No need to await Firebase - just confirm we have the account
             Log.d("AuthManager", "✅ Sign in successful: ${account.email} (${account.id})")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -49,7 +48,19 @@ class AuthManager @Inject constructor(
         }
     }
 
-    fun signOut() {
-        getGoogleSignInClient().signOut()
+    /**
+     * Sign out and wait for Google Play Services to fully clear state.
+     * This prevents the ~30s delay when signing back in immediately after.
+     */
+    suspend fun signOut() {
+        try {
+            Log.d("AuthManager", "🔄 Signing out...")
+            getGoogleSignInClient().signOut().await()
+            Log.d("AuthManager", "✅ Sign out complete")
+        } catch (e: Exception) {
+            Log.e("AuthManager", "❌ Sign out error: ${e.message}")
+            // Fall back to fire-and-forget
+            getGoogleSignInClient().signOut()
+        }
     }
 }

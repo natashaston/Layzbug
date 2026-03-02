@@ -96,4 +96,7 @@ dependencies {
 
     // Google Sign-In
     implementation(libs.play.services.auth)
+
+    // Coroutines support for Google Play Services Tasks
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }

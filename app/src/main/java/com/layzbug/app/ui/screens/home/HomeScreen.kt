@@ -1,7 +1,6 @@
 package com.layzbug.app.ui.screens.home
 
 import android.app.Activity
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -75,6 +74,7 @@ fun HomeScreen(
                     scope.launch {
                         val authManager = com.layzbug.app.data.auth.AuthManager(context)
                         authManager.signInWithGoogle(account)
+                        viewModel.onUserSignedIn()
                         onSignInSuccess()
                     }
                 } catch (e: ApiException) {
@@ -124,15 +124,9 @@ fun HomeScreen(
 
                     Button(
                         onClick = {
-                            Log.d("SignInDebug", "🔘 Button clicked at ${System.currentTimeMillis()}")
                             val authManager = com.layzbug.app.data.auth.AuthManager(context)
-                            Log.d("SignInDebug", "🔧 AuthManager created at ${System.currentTimeMillis()}")
-                            val client = authManager.getGoogleSignInClient()
-                            Log.d("SignInDebug", "📱 GoogleSignInClient created at ${System.currentTimeMillis()}")
-                            val signInIntent = client.signInIntent
-                            Log.d("SignInDebug", "📝 signInIntent created at ${System.currentTimeMillis()}")
+                            val signInIntent = authManager.getGoogleSignInClient().signInIntent
                             signInLauncher.launch(signInIntent)
-                            Log.d("SignInDebug", "🚀 launch() called at ${System.currentTimeMillis()}")
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(

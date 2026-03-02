@@ -48,9 +48,6 @@ class HomeViewModel @Inject constructor(
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
     // Debug: visible sync status for troubleshooting
-    private val _syncStatus = MutableStateFlow("")
-    val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
-
     private var hasInitialSyncCompleted = false
 
     // Refresh trigger to force UI updates after Google Fit sync
@@ -193,62 +190,63 @@ class HomeViewModel @Inject constructor(
     private suspend fun autoSyncSteps() {
         if (!checkPermissions()) {
             Log.w("LayzbugSync", "⚠️ Aborting sync: Permissions not granted")
-            _syncStatus.value = "❌ Permissions not granted"
             return
         }
 
         // Sync from installation year start to today
         val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
         Log.d("LayzbugSync", "Syncing $daysToSync days from Google Fit (from $startOfYear to $today)...")
-        _syncStatus.value = "Syncing $daysToSync days..."
 
         var syncedCount = 0
-        var checkedCount = 0
-        var errorCount = 0
-        val debugLines = mutableListOf<String>()
 
-        // Sync in REVERSE order (most recent first) so today/this week gets priority
         for (i in daysToSync downTo 0) {
             val date = startOfYear.plusDays(i)
-            checkedCount++
 
             try {
-                // Use new checkDailyWalk which returns both status and distance
-                val result = fitSyncManager.checkDailyWalk(date)
+                val isWalkedInDb = walkRepository.getWalkStatus(date)
 
-                if (result.isWalked || result.distanceKm > 0) {
-                    // Always update if there's walk data or distance data from Health Connect
-                    walkRepository.updateWalkFromGoogleFit(date, result.isWalked, result.distanceKm)
-                    if (result.isWalked) syncedCount++
-                    debugLines.add("${if (result.isWalked) "✅" else "📏"} $date: walked=${result.isWalked}, ${result.totalMinutes}min, ${result.sessionCount}sess, ${result.distanceKm}km")
-                    delay(50)
-                } else {
-                    debugLines.add("⬜ $date: 0sess, 0km")
-                }
-
-                // Update visible status every 5 days
-                if (checkedCount % 5 == 0) {
-                    _syncStatus.value = "Checked $checkedCount/$daysToSync days, found $syncedCount walks"
+                if (!isWalkedInDb) {
+                    // Day not yet marked as walked — check Health Connect
+                    val result = fitSyncManager.checkDailyWalk(date)
+                    if (result.isWalked) {
+                        walkRepository.updateWalkFromGoogleFit(date, true, result.distanceKm)
+                        syncedCount++
+                        delay(50)
+                    } else if (result.distanceKm > 0) {
+                        // Not walked but has distance data — store it
+                        walkRepository.updateWalkFromGoogleFit(date, false, result.distanceKm)
+                        delay(50)
+                    }
                 }
             } catch (e: Exception) {
-                errorCount++
-                debugLines.add("❌ $date: ${e.message}")
                 Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
             }
         }
 
-        // Final status with full detail - show only current month for readability
-        val febLines = debugLines.filter { it.contains("2026-02") }
-        val summary = "Done: $syncedCount walks from $checkedCount days ($errorCount errors)\n" +
-                "=== FEBRUARY ===\n" +
-                febLines.joinToString("\n")
-        _syncStatus.value = summary
         Log.d("LayzbugSync", "✅ Synced $syncedCount new walks from Google Fit")
     }
 
     fun toggleDay(date: LocalDate, currentStatus: Boolean) {
         viewModelScope.launch {
             walkRepository.updateManualWalk(date, !currentStatus)
+        }
+    }
+
+    /**
+     * Called after user signs in (e.g. from HomeScreen banner).
+     * Re-syncs manual walks from Supabase and starts listener.
+     */
+    fun onUserSignedIn() {
+        viewModelScope.launch {
+            try {
+                Log.d("LayzbugSync", "🔄 User signed in — syncing from Supabase...")
+                walkRepository.syncFromSupabase()
+                walkRepository.startSupabaseSync()
+                _refreshTrigger.value++
+                Log.d("LayzbugSync", "✅ Post-login Supabase sync complete")
+            } catch (e: Exception) {
+                Log.e("LayzbugSync", "❌ Post-login sync failed: ${e.message}", e)
+            }
         }
     }
 }
