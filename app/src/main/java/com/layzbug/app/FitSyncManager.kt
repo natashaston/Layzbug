@@ -26,9 +26,6 @@ data class DailyWalkResult(
 class FitSyncManager @Inject constructor(
     private val healthConnectClient: HealthConnectClient
 ) {
-    /**
-     * Checks if the set of required permissions is already granted.
-     */
     suspend fun hasPermissions(permissions: Set<String>): Boolean {
         return try {
             val granted = healthConnectClient.permissionController.getGrantedPermissions()
@@ -39,17 +36,6 @@ class FitSyncManager @Inject constructor(
         }
     }
 
-    /**
-     * Checks daily walking goal and returns both walk status and distance.
-     *
-     * Detection strategy (same as original, plus distance):
-     * 1. Check ExerciseSessionRecords for manually logged workouts >= 30 min
-     * 2. Fall back to City-Proof Streak Logic using per-minute step aggregation
-     *    - Any minute with 40+ steps counts as "walking"
-     *    - Allows up to 4-min gaps (traffic lights, crossings)
-     *    - If continuous walking streak >= 30 min -> walked
-     * 3. Also aggregate total distance for the day
-     */
     suspend fun checkDailyWalk(date: LocalDate): DailyWalkResult {
         try {
             val zoneId = ZoneId.systemDefault()
@@ -107,17 +93,15 @@ class FitSyncManager @Inject constructor(
     }
 
     /**
-     * City-Proof Streak Logic: Analyzes per-minute step data to find
-     * sustained walking periods. Tolerates brief stops (traffic lights,
-     * crossings) up to 4 minutes.
-     *
-     * A minute with 40+ steps is considered "walking".
-     * If a continuous walking streak (with gap tolerance) reaches 30 min,
-     * returns true.
+     * Walk detection using two strategies:
+     * 1. Continuous streak >= 30 min (with 4-min gap tolerance) — catches single long walks
+     * 2. If at least one walk segment >= 20 min exists, sum ALL walking minutes.
+     *    If total >= 30 min, mark as walked. This catches days with multiple shorter walks
+     *    where at least one is intentional (20+ min).
      */
     private suspend fun checkStepStreak(timeRange: TimeRangeFilter): Boolean {
         return try {
-            val response: List<*>? = healthConnectClient.aggregateGroupByDuration(
+            val response = healthConnectClient.aggregateGroupByDuration(
                 AggregateGroupByDurationRequest(
                     metrics = setOf(StepsRecord.COUNT_TOTAL),
                     timeRangeFilter = timeRange,
@@ -125,45 +109,66 @@ class FitSyncManager @Inject constructor(
                 )
             )
 
-            @Suppress("SENSELESS_COMPARISON")
-            if (response == null || response.isEmpty()) return false
-
+            // Track all walk segments (continuous blocks of walking with gap tolerance)
             var continuousMinutes = 0
             var gapMinutes = 0
+            var totalWalkingMinutes = 0
+            var hasAnchorWalk = false  // At least one segment >= 20 min
             val maxAllowedGap = 4
+            val segments = mutableListOf<Int>()  // Duration of each walk segment
 
             for (bucket in response) {
-                if (bucket == null) continue
-                val stepsInMinute = try {
-                    (bucket as? androidx.health.connect.client.aggregate.AggregationResultGroupedByDuration)
-                        ?.result?.get(StepsRecord.COUNT_TOTAL) ?: 0L
-                } catch (e: Exception) {
-                    0L
-                }
+                val stepsInMinute = bucket.result[StepsRecord.COUNT_TOTAL] ?: 0L
 
                 if (stepsInMinute >= 40) {
+                    totalWalkingMinutes++
                     continuousMinutes += (1 + gapMinutes)
                     gapMinutes = 0
-                    if (continuousMinutes >= 30) return true
+
+                    // Strategy 1: Single continuous 30-min walk
+                    if (continuousMinutes >= 30) {
+                        Log.d("FitSync", "🚶 Continuous streak: ${continuousMinutes}min")
+                        return true
+                    }
                 } else {
                     gapMinutes++
                     if (gapMinutes > maxAllowedGap) {
+                        // Segment ended — record it
+                        if (continuousMinutes > 0) {
+                            segments.add(continuousMinutes)
+                        }
                         continuousMinutes = 0
                         gapMinutes = 0
                     }
                 }
             }
 
-            false
+            // Don't forget the last segment
+            if (continuousMinutes > 0) {
+                segments.add(continuousMinutes)
+            }
+
+            // Strategy 2: Only count segments >= 10 min as real walks
+            var qualifiedWalkingMinutes = 0
+            for (segment in segments) {
+                if (segment >= 10) {
+                    qualifiedWalkingMinutes += segment
+                    if (segment >= 20) {
+                        hasAnchorWalk = true
+                    }
+                }
+            }
+
+            val scatteredWalk = hasAnchorWalk && qualifiedWalkingMinutes >= 30
+            Log.d("FitSync", "🚶 Segments: $segments, qualified(>=10min): ${qualifiedWalkingMinutes}min, anchor(>=20min): $hasAnchorWalk, walked=$scatteredWalk")
+            scatteredWalk
         } catch (e: Exception) {
-            Log.e("FitSync", "Error in step streak check: ${e.message}")
+            Log.e("FitSync", "Error in step check: ${e.message}")
             false
         }
     }
 
-    /**
-     * @deprecated Use checkDailyWalk() instead which returns both walk status and distance.
-     */
+    @Deprecated("Use checkDailyWalk() instead")
     suspend fun checkWalkingGoal(date: LocalDate): Boolean {
         return checkDailyWalk(date).isWalked
     }

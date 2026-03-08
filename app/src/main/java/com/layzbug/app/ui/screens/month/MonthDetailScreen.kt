@@ -14,10 +14,10 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.layzbug.app.ui.components.CalendarGrid
 import com.layzbug.app.ui.components.EditWalkStatusBottomSheet
+import com.layzbug.app.ui.components.MonthHero
 import com.layzbug.app.ui.theme.Dimens
 import com.layzbug.app.ui.theme.SurfaceColor
 import com.layzbug.app.data.viewmodel.MonthViewModel
-import com.layzbug.app.ui.components.MonthHeroPill
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
@@ -122,11 +122,9 @@ fun MonthDetailScreen(
                     bottom = paddingValues.calculateBottomPadding()
                 )
         ) {
-            MonthHeroPill(
+            MonthHero(
                 stats = rawMonthStats,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(238.dp)
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(Dimens.spaceLg))

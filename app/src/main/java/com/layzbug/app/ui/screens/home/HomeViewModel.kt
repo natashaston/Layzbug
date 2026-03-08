@@ -56,8 +56,7 @@ class HomeViewModel @Inject constructor(
     private val requiredPermissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-        HealthPermission.getReadPermission(DistanceRecord::class),
-        HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+        HealthPermission.getReadPermission(DistanceRecord::class)
     )
 
     init {

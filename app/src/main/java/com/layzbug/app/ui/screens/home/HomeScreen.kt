@@ -4,17 +4,12 @@ import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -22,14 +17,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
-import com.layzbug.app.domain.StatsValue
-import com.layzbug.app.ui.components.StatsCard
-import com.layzbug.app.ui.components.StatsCardPill
+import com.layzbug.app.ui.components.YearlyStatsWithDropdown
+import com.layzbug.app.ui.components.MonthHero
 import com.layzbug.app.ui.theme.Dimens
-import com.layzbug.app.ui.theme.OnPrimary
-import com.layzbug.app.ui.theme.OnSurface
-import com.layzbug.app.ui.theme.Primary
-import com.layzbug.app.ui.theme.SurfaceContainer
 import com.layzbug.app.ui.theme.SurfaceColor
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -49,7 +39,6 @@ fun HomeScreen(
 
     val yearlyWalks by viewModel.yearlyWalks.collectAsState()
     val currentMonthWalks by viewModel.currentMonthWalks.collectAsState()
-    val weeklyDays by viewModel.weeklyDays.collectAsState()
 
     // Animate sign-in banner
     val bannerVisible = !isLoggedIn
@@ -143,68 +132,24 @@ fun HomeScreen(
             }
         }
 
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Dimens.spaceXs)
+            verticalArrangement = Arrangement.spacedBy(Dimens.spaceBase)
         ) {
-            StatsCard(
-                number = yearlyWalks.value.toString(),
-                label = yearlyWalks.label,
-                distanceKm = yearlyWalks.distanceKm,
-                modifier = Modifier.weight(1f).graphicsLayer(),
-                onClick = onNavigateToHistory
+            YearlyStatsWithDropdown(
+                totalWalks = yearlyWalks.value,
+                totalDistanceKm = yearlyWalks.distanceKm,
+                selectedYear = LocalDate.now().year,
+                showDropdown = false,
+                onClick = onNavigateToHistory,
+                modifier = Modifier.fillMaxWidth()
             )
 
-            StatsCardPill(
+            MonthHero(
                 stats = currentMonthWalks,
-                modifier = Modifier.weight(1f).graphicsLayer(),
+                modifier = Modifier.fillMaxWidth().graphicsLayer(),
                 onClick = onNavigateToMonthDetail
             )
-        }
-
-        Spacer(modifier = Modifier.height(Dimens.spaceXl3))
-        Text(
-            "Weekly Progress",
-            color = OnSurface,
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Spacer(modifier = Modifier.height(Dimens.spaceXs2))
-        Text(
-            "30 minute walks",
-            color = OnSurface,
-            style = MaterialTheme.typography.bodySmall
-        )
-        Spacer(modifier = Modifier.height(Dimens.spaceBase))
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
-            horizontalArrangement = Arrangement.spacedBy(Dimens.spaceXs),
-            verticalArrangement = Arrangement.spacedBy(Dimens.spaceXs),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(300.dp)
-        ) {
-            items(weeklyDays) { day ->
-                Box(
-                    modifier = Modifier
-                        .height(60.dp)
-                        .clip(RoundedCornerShape(Dimens.radiusLg))
-                        .background(if (day.isWalked) Primary else SurfaceContainer)
-                        .clickable { viewModel.toggleDay(day.date, day.isWalked) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = day.label,
-                        style = if (day.isWalked) {
-                            MaterialTheme.typography.bodySmall.copy(color = OnPrimary)
-                        } else {
-                            MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    )
-                }
-            }
         }
     }
 }
