@@ -95,9 +95,8 @@ class FitSyncManager @Inject constructor(
     /**
      * Walk detection using two strategies:
      * 1. Continuous streak >= 30 min (with 4-min gap tolerance) — catches single long walks
-     * 2. If at least one walk segment >= 20 min exists, sum ALL walking minutes.
-     *    If total >= 30 min, mark as walked. This catches days with multiple shorter walks
-     *    where at least one is intentional (20+ min).
+     * 2. Sum all walk segments >= 5 min. If total >= 30 min, mark as walked.
+     *    Segments under 5 min are discarded (kitchen, bathroom, room-to-room).
      */
     private suspend fun checkStepStreak(timeRange: TimeRangeFilter): Boolean {
         return try {
@@ -112,8 +111,6 @@ class FitSyncManager @Inject constructor(
             // Track all walk segments (continuous blocks of walking with gap tolerance)
             var continuousMinutes = 0
             var gapMinutes = 0
-            var totalWalkingMinutes = 0
-            var hasAnchorWalk = false  // At least one segment >= 20 min
             val maxAllowedGap = 4
             val segments = mutableListOf<Int>()  // Duration of each walk segment
 
@@ -121,7 +118,6 @@ class FitSyncManager @Inject constructor(
                 val stepsInMinute = bucket.result[StepsRecord.COUNT_TOTAL] ?: 0L
 
                 if (stepsInMinute >= 40) {
-                    totalWalkingMinutes++
                     continuousMinutes += (1 + gapMinutes)
                     gapMinutes = 0
 
@@ -148,20 +144,13 @@ class FitSyncManager @Inject constructor(
                 segments.add(continuousMinutes)
             }
 
-            // Strategy 2: Only count segments >= 10 min as real walks
-            var qualifiedWalkingMinutes = 0
-            for (segment in segments) {
-                if (segment >= 10) {
-                    qualifiedWalkingMinutes += segment
-                    if (segment >= 20) {
-                        hasAnchorWalk = true
-                    }
-                }
-            }
+            // Strategy 2: Only count segments >= 5 min as real walks
+            // Discard anything under 5 min (kitchen, bathroom, room-to-room)
+            val qualifiedMinutes = segments.filter { it >= 5 }.sum()
 
-            val scatteredWalk = hasAnchorWalk && qualifiedWalkingMinutes >= 30
-            Log.d("FitSync", "🚶 Segments: $segments, qualified(>=10min): ${qualifiedWalkingMinutes}min, anchor(>=20min): $hasAnchorWalk, walked=$scatteredWalk")
-            scatteredWalk
+            val walked = qualifiedMinutes >= 30
+            Log.d("FitSync", "🚶 Segments: $segments, qualified(>=5min): ${qualifiedMinutes}min, walked=$walked")
+            walked
         } catch (e: Exception) {
             Log.e("FitSync", "Error in step check: ${e.message}")
             false

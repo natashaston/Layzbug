@@ -1,10 +1,16 @@
 package com.layzbug.app.ui.navigation
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -94,7 +100,6 @@ fun LayzbugNavHost() {
                                 authManager.signOut()
                                 isLoggedIn = false
                                 drawerState.close()
-                                // Stay on current screen, don't navigate away
                             }
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
@@ -124,7 +129,6 @@ fun LayzbugNavHost() {
                         },
                         navigationIcon = {
                             if (currentRoute == "home" && isLoggedIn) {
-                                // Hamburger menu only when logged in
                                 IconButton(onClick = {
                                     scope.launch { drawerState.open() }
                                 }) {
@@ -135,7 +139,6 @@ fun LayzbugNavHost() {
                                     )
                                 }
                             } else if (currentRoute != "home" && currentRoute != null) {
-                                // Back button on other screens
                                 IconButton(onClick = { navController.popBackStack() }) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -209,12 +212,18 @@ fun LayzbugNavHost() {
                         },
                         isLoggedIn = isLoggedIn,
                         onSignInSuccess = {
-                            isLoggedIn = true  // Update auth state
+                            isLoggedIn = true
                         }
                     )
                 }
 
-                composable("history") {
+                composable(
+                    route = "history",
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None },
+                    popEnterTransition = { EnterTransition.None },
+                    popExitTransition = { ExitTransition.None }
+                ) {
                     HistoryScreen(
                         onBack = { navController.popBackStack() },
                         onNavigateToMonth = { year: Int, month: Int ->
@@ -223,7 +232,13 @@ fun LayzbugNavHost() {
                     )
                 }
 
-                composable(route = "details/{year}/{month}") { backStackEntry ->
+                composable(
+                    route = "details/{year}/{month}",
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None },
+                    popEnterTransition = { EnterTransition.None },
+                    popExitTransition = { ExitTransition.None }
+                ) { backStackEntry ->
                     val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
                     val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
 

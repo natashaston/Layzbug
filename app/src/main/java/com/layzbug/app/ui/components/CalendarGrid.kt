@@ -13,21 +13,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.layzbug.app.R
 import com.layzbug.app.data.viewmodel.CalendarDayModel
 import com.layzbug.app.ui.theme.Dimens
-import com.layzbug.app.ui.theme.GoogleSansFlex
-import com.layzbug.app.ui.theme.OnPrimary
-import com.layzbug.app.ui.theme.OnSurface
-import com.layzbug.app.ui.theme.OnSurfaceVariant
-import com.layzbug.app.ui.theme.OutlineVariant
-import com.layzbug.app.ui.theme.Primary
-import com.layzbug.app.ui.theme.Tertiary
 import com.layzbug.app.ui.theme.SurfaceContainer
+
+private val JetBrainsMono = FontFamily(
+    Font(R.font.jetbrains_mono_regular, FontWeight.Normal)
+)
+
+private val MonthAccent = Color(0xFF00FF66)
+private val RamsSurface = Color(0xFF151619)
 
 @Composable
 fun CalendarGrid(
@@ -35,8 +37,6 @@ fun CalendarGrid(
     onDayClick: (CalendarDayModel) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val weekDays = listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
-
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -49,29 +49,9 @@ fun CalendarGrid(
             verticalArrangement = Arrangement.spacedBy(Dimens.spaceXs),
             modifier = Modifier.fillMaxWidth()
         ) {
-            // 1. Weekday Headers (Now inside the grid for perfect alignment)
-            items(weekDays) { day ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = Dimens.spaceBase),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = day,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            color = OnSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        ),
-                        maxLines = 1
-                    )
-                }
-            }
-
-            // 2. The Days Grid
             items(
                 items = days,
-                key = { it.date.toString() } // IMPORTANT: This prevents unnecessary redraws
+                key = { it.date.toString() }
             ) { dayModel ->
                 Box(contentAlignment = Alignment.Center) {
                     CalendarDayItem(
@@ -85,9 +65,6 @@ fun CalendarGrid(
     }
 }
 
-/**
- * Visual UI for an individual day in the grid.
- */
 @Composable
 fun CalendarDayItem(
     dayNumber: Int,
@@ -97,25 +74,32 @@ fun CalendarDayItem(
 ) {
     Box(
         modifier = modifier
-            .size(Dimens.size4xl) // Forces a perfect 40dp circle
+            .size(Dimens.size4xl)
             .clip(CircleShape)
             .background(
-                if (isWalked) Primary
-                else SurfaceContainer,
+                if (isWalked) RamsSurface
+                else SurfaceContainer
             )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = dayNumber.toString(),
+            fontFamily = JetBrainsMono,
+            fontWeight = FontWeight.Medium,
+            fontSize = 13.sp,
+            letterSpacing = (-0.5).sp,
+            color = if (isWalked) MonthAccent else MaterialTheme.colorScheme.onSurface,
             style = if (isWalked) {
-                MaterialTheme.typography.bodySmall.copy(
-                    color = OnPrimary
+                androidx.compose.ui.text.TextStyle(
+                    shadow = androidx.compose.ui.graphics.Shadow(
+                        color = MonthAccent.copy(alpha = 0.2f),
+                        offset = Offset.Zero,
+                        blurRadius = 10f
+                    )
                 )
             } else {
-                MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                androidx.compose.ui.text.TextStyle.Default
             }
         )
     }

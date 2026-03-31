@@ -4,14 +4,23 @@ import android.app.Activity
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
+import com.layzbug.app.R
 import com.layzbug.app.ui.components.CalendarGrid
 import com.layzbug.app.ui.components.EditWalkStatusBottomSheet
 import com.layzbug.app.ui.components.MonthHero
@@ -21,6 +30,11 @@ import com.layzbug.app.data.viewmodel.MonthViewModel
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+
+private val VictorMono = FontFamily(
+    Font(R.font.victor_mono_regular, FontWeight.Normal),
+    Font(R.font.victor_mono_bold, FontWeight.Bold)
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,10 +138,32 @@ fun MonthDetailScreen(
         ) {
             MonthHero(
                 stats = rawMonthStats,
+                isCurrentMonth = year == YearMonth.now().year && month == YearMonth.now().monthValue,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(Dimens.spaceLg))
+            Spacer(modifier = Modifier.height(Dimens.spaceBase))
+
+            // Section divider
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp, bottom = 32.dp)
+                    .alpha(0.3f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.Black.copy(alpha = 0.1f)))
+                Text(
+                    text = "DAILY BREAKDOWN",
+                    fontSize = 11.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 4.sp,
+                    color = Color.Black
+                )
+                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.Black.copy(alpha = 0.1f)))
+            }
 
             CalendarGrid(
                 days = walkDays,

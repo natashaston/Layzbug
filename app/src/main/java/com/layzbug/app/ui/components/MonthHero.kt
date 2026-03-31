@@ -46,6 +46,7 @@ private val RamsChipBg = Color.White.copy(alpha = 0.03f)
 @Composable
 fun MonthHero(
     stats: StatsValue,
+    isCurrentMonth: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
@@ -86,7 +87,7 @@ fun MonthHero(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    MonthPulseDot()
+                    if (isCurrentMonth) MonthPulseDot()
                     Text(
                         text = stats.label.uppercase(),
                         color = RamsTextMuted,
