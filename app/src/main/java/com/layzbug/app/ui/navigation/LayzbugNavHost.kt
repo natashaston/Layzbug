@@ -1,16 +1,10 @@
 package com.layzbug.app.ui.navigation
 
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -29,10 +23,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.ui.screens.home.HomeScreen
 import com.layzbug.app.ui.screens.home.HomeViewModel
 import com.layzbug.app.ui.screens.history.HistoryScreen
 import com.layzbug.app.ui.screens.month.MonthDetailScreen
+import com.layzbug.app.ui.screens.OnboardingScreen
 import com.layzbug.app.ui.screens.PermissionScreen
 import com.layzbug.app.ui.screens.SplashScreen
 import com.layzbug.app.ui.theme.SurfaceColor
@@ -53,11 +49,11 @@ fun LayzbugNavHost() {
     val healthConnectClient = HealthConnectClient.getOrCreate(context)
     val homeViewModel: HomeViewModel = hiltViewModel()
 
-    // Reactive auth state
+    val installationTracker = remember { InstallationTracker(context) }
+
     val authManager = remember { com.layzbug.app.data.auth.AuthManager(context) }
     var isLoggedIn by remember { mutableStateOf(authManager.isLoggedIn) }
 
-    // Update auth state when drawer opens
     LaunchedEffect(Unit) {
         snapshotFlow { isLoggedIn }
     }
@@ -65,7 +61,9 @@ fun LayzbugNavHost() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    val showTopBar = currentRoute != "splash" && currentRoute != Routes.Permission.route
+    val showTopBar = currentRoute != "splash"
+            && currentRoute != Routes.Permission.route
+            && currentRoute != "onboarding"
     val topBarAlpha by animateFloatAsState(
         targetValue = if (showTopBar) 1f else 0f,
         animationSpec = tween(400, easing = LinearEasing),
@@ -90,7 +88,6 @@ fun LayzbugNavHost() {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Only show logout when logged in
                 if (isLoggedIn) {
                     NavigationDrawerItem(
                         label = { Text("Logout") },
@@ -163,12 +160,19 @@ fun LayzbugNavHost() {
                 startDestination = "splash",
                 modifier = Modifier.padding(innerPadding)
             ) {
+                // Splash
                 composable(
                     route = "splash",
                     exitTransition = { ExitTransition.None }
                 ) {
                     SplashScreen(
                         viewModel = homeViewModel,
+                        isOnboardingComplete = installationTracker.isOnboardingComplete(),
+                        onNavigateToOnboarding = {
+                            navController.navigate("onboarding") {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        },
                         onNavigateToPermissions = {
                             navController.navigate(Routes.Permission.route) {
                                 popUpTo("splash") { inclusive = true }
@@ -182,6 +186,25 @@ fun LayzbugNavHost() {
                     )
                 }
 
+                // Onboarding (first install only)
+                // GET STARTED triggers permission request directly,
+                // then navigates to home
+                composable(
+                    route = "onboarding",
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None }
+                ) {
+                    OnboardingScreen(
+                        onComplete = {
+                            installationTracker.setOnboardingComplete()
+                            navController.navigate("home") {
+                                popUpTo("onboarding") { inclusive = true }
+                            }
+                        }
+                    )
+                }
+
+                // Permissions (only for returning users who lost permissions)
                 composable(
                     route = Routes.Permission.route,
                     enterTransition = { EnterTransition.None },
@@ -193,6 +216,7 @@ fun LayzbugNavHost() {
                     )
                 }
 
+                // Home
                 composable(
                     route = "home",
                     enterTransition = { EnterTransition.None },
@@ -217,6 +241,7 @@ fun LayzbugNavHost() {
                     )
                 }
 
+                // History
                 composable(
                     route = "history",
                     enterTransition = { EnterTransition.None },
@@ -232,6 +257,7 @@ fun LayzbugNavHost() {
                     )
                 }
 
+                // Month detail
                 composable(
                     route = "details/{year}/{month}",
                     enterTransition = { EnterTransition.None },

@@ -1,5 +1,7 @@
 package com.layzbug.app.ui.screens
 
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -21,6 +23,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.StepsRecord
 import com.layzbug.app.R
 
 // ─── FONTS ──────────────────────────────────────────────────────────
@@ -54,6 +61,21 @@ fun OnboardingScreen(
 ) {
     var currentPage by remember { mutableIntStateOf(0) }
     val totalPages = 6
+
+    // Permission launcher — triggers on GET STARTED
+    val permissions = setOf(
+        HealthPermission.getReadPermission(StepsRecord::class),
+        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        HealthPermission.getReadPermission(DistanceRecord::class),
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+    )
+
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { grantedPermissions ->
+        Log.d("Onboarding", "Granted permissions: $grantedPermissions")
+        onComplete()
+    }
 
     Column(
         modifier = Modifier
@@ -92,7 +114,16 @@ fun OnboardingScreen(
             targetState = currentPage,
             modifier = Modifier.weight(1f),
             transitionSpec = {
-                fadeIn(tween(300)) togetherWith fadeOut(tween(200))
+                val gap = 0.15f // 15% extra offset creates visible space between screens
+                if (targetState > initialState) {
+                    // Forward: slide in from right (with gap), slide out to left (with gap)
+                    slideInHorizontally { (it * (1 + gap)).toInt() } togetherWith
+                            slideOutHorizontally { -(it * (1 + gap)).toInt() }
+                } else {
+                    // Back: slide in from left (with gap), slide out to right (with gap)
+                    slideInHorizontally { -(it * (1 + gap)).toInt() } togetherWith
+                            slideOutHorizontally { (it * (1 + gap)).toInt() }
+                }
             },
             label = "onboarding"
         ) { page ->
@@ -108,7 +139,7 @@ fun OnboardingScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Bottom nav — BACK + NEXT (oval buttons)
+        // Bottom nav
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -145,7 +176,8 @@ fun OnboardingScreen(
                     if (currentPage < totalPages - 1) {
                         currentPage++
                     } else {
-                        onComplete()
+                        // Last page — launch permission request
+                        requestPermissionLauncher.launch(permissions)
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -176,6 +208,7 @@ private fun PageHook() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+
         RamsCard {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -183,14 +216,16 @@ private fun PageHook() {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "WHO recommends",
+                    text = "World Health Organisation recommends",
                     color = RamsTextMuted,
-                    fontSize = 11.sp,
+                    fontSize = 16.sp,
                     fontFamily = VictorMono,
-                    letterSpacing = 1.1.sp
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.1.sp,
+                    textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "30",
+                    text = "40",
                     color = OrangeAccent,
                     fontSize = 72.sp,
                     fontFamily = JetBrainsMono,
@@ -205,37 +240,14 @@ private fun PageHook() {
                     )
                 )
                 Text(
-                    text = "MINUTES OF WALKING DAILY",
+                    text = "minutes of walks daily",
                     color = RamsTextMuted,
-                    fontSize = 11.sp,
+                    fontSize = 16.sp,
                     fontFamily = VictorMono,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     letterSpacing = 1.1.sp,
                     textAlign = TextAlign.Center
                 )
-
-                // Core rule callout
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = "Only walks over 5 minutes count.\nTotal must reach 30 minutes.",
-                        color = OrangeAccent,
-                        fontSize = 12.sp,
-                        fontFamily = VictorMono,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 18.sp,
-                        letterSpacing = 0.5.sp,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
             }
         }
 
@@ -248,17 +260,6 @@ private fun PageHook() {
             fontFamily = VictorMono,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Layzbug tracks it for you.\nAutomatically.",
-            color = Color.Black.copy(alpha = 0.35f),
-            fontSize = 13.sp,
-            fontFamily = VictorMono,
-            textAlign = TextAlign.Center,
-            lineHeight = 20.sp
         )
     }
 }
@@ -273,7 +274,20 @@ private fun PageSmartDetection() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Not all steps count",
+            text = "Layzbug tracks your walks automatically :)",
+            color = Color.Black.copy(alpha = 0.6f),
+            fontSize = 16.sp,
+            fontFamily = VictorMono,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 28.sp,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+
+        Text(
+            text = "But not all steps count",
             color = Color.Black.copy(alpha = 0.6f),
             fontSize = 16.sp,
             fontFamily = VictorMono,
@@ -281,16 +295,15 @@ private fun PageSmartDetection() {
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
-        // Counts
         RamsCard {
             Column(modifier = Modifier.padding(20.dp)) {
-                ChipLabel(text = "COUNTS", color = GreenAccent)
+                ChipLabel(text = "WHAT COUNTS", color = GreenAccent)
                 Spacer(modifier = Modifier.height(16.dp))
-                DetectionRow(text = "A 10 min walk + a 25 min walk", isValid = true)
+                DetectionRow(text = "40 min continuous walks", isValid = true)
                 Spacer(modifier = Modifier.height(8.dp))
-                DetectionRow(text = "30 min continuous walk", isValid = true)
+                DetectionRow(text = "All walks over 5 minutes", isValid = true)
                 Spacer(modifier = Modifier.height(8.dp))
                 DetectionRow(text = "Walk with traffic light stops", isValid = true)
             }
@@ -298,10 +311,9 @@ private fun PageSmartDetection() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Doesn't count
         RamsCard {
             Column(modifier = Modifier.padding(20.dp)) {
-                ChipLabel(text = "DOESN'T COUNT", color = RedAccent)
+                ChipLabel(text = "WHAT DOES NOT COUNT", color = RedAccent)
                 Spacer(modifier = Modifier.height(16.dp))
                 DetectionRow(text = "Kitchen and bathroom trips", isValid = false)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -383,7 +395,6 @@ private fun PageCalendarPreview() {
                 ChipLabel(text = "MARCH 2026", color = GreenAccent)
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Calendar grid — 7 columns
                 val days = (1..31).toList()
                 val rows = days.chunked(7)
 
@@ -412,7 +423,7 @@ private fun PageCalendarPreview() {
                                         fontSize = 11.sp,
                                         letterSpacing = (-0.5).sp,
                                         color = if (isWalked) GreenAccent
-                                               else Color.Black.copy(alpha = 0.3f),
+                                        else Color.Black.copy(alpha = 0.3f),
                                         style = if (isWalked) {
                                             androidx.compose.ui.text.TextStyle(
                                                 shadow = androidx.compose.ui.graphics.Shadow(
@@ -427,7 +438,6 @@ private fun PageCalendarPreview() {
                                     )
                                 }
                             }
-                            // Fill remaining cells in last row
                             repeat(7 - week.size) {
                                 Spacer(modifier = Modifier.size(36.dp))
                             }
@@ -475,7 +485,6 @@ private fun PageNotification() {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Mock notification
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -536,7 +545,7 @@ private fun PageNotification() {
     }
 }
 
-// ─── PAGE 6: PERMISSIONS + SIGN IN ──────────────────────────────────
+// ─── PAGE 6: PERMISSIONS ────────────────────────────────────────────
 
 @Composable
 private fun PagePermissions() {

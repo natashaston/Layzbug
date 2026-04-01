@@ -20,6 +20,7 @@ class InstallationTracker @Inject constructor(
 
     companion object {
         private const val KEY_INSTALL_DATE = "install_date"
+        private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
     }
 
     /**
@@ -51,9 +52,30 @@ class InstallationTracker @Inject constructor(
     }
 
     /**
+     * Check if onboarding has been completed.
+     */
+    fun isOnboardingComplete(): Boolean {
+        return prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
+    }
+
+    /**
+     * Mark onboarding as completed. Called after user finishes or skips onboarding.
+     */
+    fun setOnboardingComplete() {
+        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
+    }
+
+    /**
      * For debugging - reset installation date
      */
     fun resetInstallationDate() {
         prefs.edit().remove(KEY_INSTALL_DATE).apply()
+    }
+
+    /**
+     * For debugging - reset onboarding state
+     */
+    fun resetOnboarding() {
+        prefs.edit().remove(KEY_ONBOARDING_COMPLETE).apply()
     }
 }
