@@ -36,6 +36,14 @@ class FitSyncManager @Inject constructor(
         }
     }
 
+    /**
+     * Walk detection rules (applied to BOTH session data and step-inferred walks):
+     * - Each walk segment must be >= 5 minutes
+     * - Sum of qualified walks must reach >= 30 minutes
+     *
+     * Tries exercise sessions first (when Google Fit logs them).
+     * Falls back to inferring walks from step data when no sessions exist.
+     */
     suspend fun checkDailyWalk(date: LocalDate): DailyWalkResult {
         try {
             val zoneId = ZoneId.systemDefault()
@@ -43,7 +51,7 @@ class FitSyncManager @Inject constructor(
             val endTime = date.plusDays(1).atStartOfDay(zoneId).toInstant()
             val timeRange = TimeRangeFilter.between(startTime, endTime)
 
-            // 1. Check for manual sessions (Google Fit "Workouts")
+            // ── Strategy 1: Read Google Fit exercise sessions ──
             val sessionResponse = healthConnectClient.readRecords(
                 ReadRecordsRequest(
                     recordType = ExerciseSessionRecord::class,
@@ -51,18 +59,25 @@ class FitSyncManager @Inject constructor(
                 )
             )
 
-            val sessionMinutes = sessionResponse.records.sumOf { session ->
+            val sessionDurations = sessionResponse.records.map { session ->
                 Duration.between(session.startTime, session.endTime).toMinutes()
             }
+            val qualifiedSessionMinutes = sessionDurations.filter { it >= 5 }.sum()
 
-            var isWalked = sessionMinutes >= 30
-
-            // 2. If no exercise sessions met the goal, use City-Proof Streak Logic
-            if (!isWalked) {
-                isWalked = checkStepStreak(timeRange)
+            // ── Strategy 2: Fallback — infer walks from step data ──
+            // Used when no exercise sessions are available
+            val inferredWalks: List<Long> = if (sessionResponse.records.isEmpty()) {
+                inferWalksFromSteps(timeRange)
+            } else {
+                emptyList()
             }
+            val qualifiedInferredMinutes = inferredWalks.filter { it >= 5 }.sum()
 
-            // 3. Aggregate total distance for the day
+            // ── Combined: take whichever source has data ──
+            val totalQualifiedMinutes = qualifiedSessionMinutes + qualifiedInferredMinutes
+            val isWalked = totalQualifiedMinutes >= 30
+
+            // ── Distance for the day ──
             val distanceKm = try {
                 val aggregateResponse = healthConnectClient.aggregate(
                     AggregateRequest(
@@ -77,13 +92,12 @@ class FitSyncManager @Inject constructor(
                 0.0
             }
 
-            Log.d("FitSync", "📊 $date: ${sessionResponse.records.size}sess/${sessionMinutes}min, " +
-                    "${distanceKm}km, walked=$isWalked")
+            Log.d("FitSync", "📊 $date: sessions=$sessionDurations, inferred=$inferredWalks, qualified=${totalQualifiedMinutes}min, walked=$isWalked, ${distanceKm}km")
 
             return DailyWalkResult(
                 isWalked = isWalked,
                 distanceKm = distanceKm,
-                totalMinutes = sessionMinutes,
+                totalMinutes = totalQualifiedMinutes,
                 sessionCount = sessionResponse.records.size
             )
         } catch (e: Exception) {
@@ -93,12 +107,12 @@ class FitSyncManager @Inject constructor(
     }
 
     /**
-     * Walk detection using two strategies:
-     * 1. Continuous streak >= 30 min (with 4-min gap tolerance) — catches single long walks
-     * 2. Sum all walk segments >= 5 min. If total >= 30 min, mark as walked.
-     *    Segments under 5 min are discarded (kitchen, bathroom, room-to-room).
+     * Infer walking segments from step data when Google Fit didn't log sessions.
+     * Reads steps in 1-minute buckets, treats >= 40 steps/min as walking.
+     * Returns the duration (in minutes) of each continuous walking segment.
+     * No gap tolerance — any minute below 40 steps ends the segment.
      */
-    private suspend fun checkStepStreak(timeRange: TimeRangeFilter): Boolean {
+    private suspend fun inferWalksFromSteps(timeRange: TimeRangeFilter): List<Long> {
         return try {
             val response = healthConnectClient.aggregateGroupByDuration(
                 AggregateGroupByDurationRequest(
@@ -108,52 +122,30 @@ class FitSyncManager @Inject constructor(
                 )
             )
 
-            // Track all walk segments (continuous blocks of walking with gap tolerance)
-            var continuousMinutes = 0
-            var gapMinutes = 0
-            val maxAllowedGap = 4
-            val segments = mutableListOf<Int>()  // Duration of each walk segment
+            val segments = mutableListOf<Long>()
+            var currentSegmentMinutes = 0L
 
             for (bucket in response) {
                 val stepsInMinute = bucket.result[StepsRecord.COUNT_TOTAL] ?: 0L
 
                 if (stepsInMinute >= 40) {
-                    continuousMinutes += (1 + gapMinutes)
-                    gapMinutes = 0
-
-                    // Strategy 1: Single continuous 30-min walk
-                    if (continuousMinutes >= 30) {
-                        Log.d("FitSync", "🚶 Continuous streak: ${continuousMinutes}min")
-                        return true
-                    }
+                    currentSegmentMinutes++
                 } else {
-                    gapMinutes++
-                    if (gapMinutes > maxAllowedGap) {
-                        // Segment ended — record it
-                        if (continuousMinutes > 0) {
-                            segments.add(continuousMinutes)
-                        }
-                        continuousMinutes = 0
-                        gapMinutes = 0
+                    if (currentSegmentMinutes > 0) {
+                        segments.add(currentSegmentMinutes)
                     }
+                    currentSegmentMinutes = 0
                 }
             }
-
             // Don't forget the last segment
-            if (continuousMinutes > 0) {
-                segments.add(continuousMinutes)
+            if (currentSegmentMinutes > 0) {
+                segments.add(currentSegmentMinutes)
             }
 
-            // Strategy 2: Only count segments >= 5 min as real walks
-            // Discard anything under 5 min (kitchen, bathroom, room-to-room)
-            val qualifiedMinutes = segments.filter { it >= 5 }.sum()
-
-            val walked = qualifiedMinutes >= 30
-            Log.d("FitSync", "🚶 Segments: $segments, qualified(>=5min): ${qualifiedMinutes}min, walked=$walked")
-            walked
+            segments
         } catch (e: Exception) {
-            Log.e("FitSync", "Error in step check: ${e.message}")
-            false
+            Log.e("FitSync", "Error inferring walks from steps: ${e.message}")
+            emptyList()
         }
     }
 

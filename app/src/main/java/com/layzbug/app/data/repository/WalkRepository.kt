@@ -108,14 +108,10 @@ class WalkRepository @Inject constructor(
     suspend fun updateWalkFromGoogleFit(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0) {
         // Only update if not already a manual walk
         if (!manualWalks.contains(date)) {
-            // Get existing entry to avoid downgrading isWalked
             val existing = walkDao.getWalkByDate(date)
-            val finalIsWalked = if (existing != null) {
-                // Never downgrade: if already walked, keep it walked
-                existing.isWalked || isWalked
-            } else {
-                isWalked
-            }
+            // Trust Google Fit: always use the latest result from the algorithm
+            // (allows correcting previously walked days when rules change)
+            val finalIsWalked = isWalked
             // Always update distance if we have a better value
             val finalDistance = if (distanceKm > 0) distanceKm
             else existing?.distanceKm ?: 0.0

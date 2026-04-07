@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -29,7 +30,6 @@ import com.layzbug.app.ui.screens.home.HomeViewModel
 import com.layzbug.app.ui.screens.history.HistoryScreen
 import com.layzbug.app.ui.screens.month.MonthDetailScreen
 import com.layzbug.app.ui.screens.OnboardingScreen
-import com.layzbug.app.ui.screens.PermissionScreen
 import com.layzbug.app.ui.screens.SplashScreen
 import com.layzbug.app.ui.theme.SurfaceColor
 import kotlinx.coroutines.launch
@@ -62,7 +62,6 @@ fun LayzbugNavHost() {
     val scope = rememberCoroutineScope()
 
     val showTopBar = currentRoute != "splash"
-            && currentRoute != Routes.Permission.route
             && currentRoute != "onboarding"
     val topBarAlpha by animateFloatAsState(
         targetValue = if (showTopBar) 1f else 0f,
@@ -167,14 +166,8 @@ fun LayzbugNavHost() {
                 ) {
                     SplashScreen(
                         viewModel = homeViewModel,
-                        isOnboardingComplete = installationTracker.isOnboardingComplete(),
                         onNavigateToOnboarding = {
                             navController.navigate("onboarding") {
-                                popUpTo("splash") { inclusive = true }
-                            }
-                        },
-                        onNavigateToPermissions = {
-                            navController.navigate(Routes.Permission.route) {
                                 popUpTo("splash") { inclusive = true }
                             }
                         },
@@ -191,7 +184,9 @@ fun LayzbugNavHost() {
                 // then navigates to home
                 composable(
                     route = "onboarding",
-                    enterTransition = { EnterTransition.None },
+                    enterTransition = {
+                        fadeIn(animationSpec = tween(500))
+                    },
                     exitTransition = { ExitTransition.None }
                 ) {
                     OnboardingScreen(
@@ -204,17 +199,7 @@ fun LayzbugNavHost() {
                     )
                 }
 
-                // Permissions (only for returning users who lost permissions)
-                composable(
-                    route = Routes.Permission.route,
-                    enterTransition = { EnterTransition.None },
-                    exitTransition = { ExitTransition.None }
-                ) {
-                    PermissionScreen(
-                        navController = navController,
-                        healthConnectClient = healthConnectClient
-                    )
-                }
+                // Permissions route removed — onboarding handles all permission requests
 
                 // Home
                 composable(

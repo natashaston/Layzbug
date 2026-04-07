@@ -23,9 +23,7 @@ import kotlinx.coroutines.delay
 fun SplashScreen(
     viewModel: HomeViewModel,
     onNavigateToOnboarding: () -> Unit,
-    onNavigateToPermissions: () -> Unit,
-    onSyncComplete: () -> Unit,
-    isOnboardingComplete: Boolean
+    onSyncComplete: () -> Unit
 ) {
     val isSyncing by viewModel.isSyncing.collectAsState()
     val alpha = remember { Animatable(0f) }
@@ -40,7 +38,7 @@ fun SplashScreen(
         Log.d("SplashScreen", "Permissions: $hasPerms")
 
         if (hasPerms) {
-            // Skip animation, go straight to home after sync
+            // Has permissions — sync and go home
             Log.d("SplashScreen", "Starting sync...")
             viewModel.startInitialSync()
 
@@ -56,10 +54,9 @@ fun SplashScreen(
             // Give time for database writes and UI refresh
             delay(500)
 
-            // Navigate immediately without animation
             onSyncComplete()
         } else {
-            // First time - show animation
+            // No permissions — show animation then route to onboarding
             alpha.animateTo(1f, animationSpec = tween(500))
 
             // Enforce minimum 1.5s brand presence
@@ -68,14 +65,8 @@ fun SplashScreen(
                 delay(1500 - elapsed)
             }
 
-            // Route: onboarding first if not completed, then permissions
-            if (!isOnboardingComplete) {
-                Log.d("SplashScreen", "📋 First install — showing onboarding")
-                onNavigateToOnboarding()
-            } else {
-                Log.d("SplashScreen", "🔑 Onboarding done — showing permissions")
-                onNavigateToPermissions()
-            }
+            Log.d("SplashScreen", "📋 No permissions — showing onboarding")
+            onNavigateToOnboarding()
         }
     }
 

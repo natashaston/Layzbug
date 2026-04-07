@@ -202,27 +202,18 @@ class HomeViewModel @Inject constructor(
             val date = startOfYear.plusDays(i)
 
             try {
-                val isWalkedInDb = walkRepository.getWalkStatus(date)
-
-                if (!isWalkedInDb) {
-                    // Day not yet marked as walked — check Health Connect
-                    val result = fitSyncManager.checkDailyWalk(date)
-                    if (result.isWalked) {
-                        walkRepository.updateWalkFromGoogleFit(date, true, result.distanceKm)
-                        syncedCount++
-                        delay(50)
-                    } else if (result.distanceKm > 0) {
-                        // Not walked but has distance data — store it
-                        walkRepository.updateWalkFromGoogleFit(date, false, result.distanceKm)
-                        delay(50)
-                    }
-                }
+                // Always re-sync every day from Google Fit — let the algorithm decide.
+                // Never trust the cached database value (it could be from old/buggy logic).
+                val result = fitSyncManager.checkDailyWalk(date)
+                walkRepository.updateWalkFromGoogleFit(date, result.isWalked, result.distanceKm)
+                if (result.isWalked) syncedCount++
+                delay(50)
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
             }
         }
 
-        Log.d("LayzbugSync", "✅ Synced $syncedCount new walks from Google Fit")
+        Log.d("LayzbugSync", "✅ Synced $syncedCount walked days from Google Fit")
     }
 
     fun toggleDay(date: LocalDate, currentStatus: Boolean) {

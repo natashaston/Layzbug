@@ -60,7 +60,7 @@ fun OnboardingScreen(
     onComplete: () -> Unit
 ) {
     var currentPage by remember { mutableIntStateOf(0) }
-    val totalPages = 6
+    val totalPages = 5
 
     // Permission launcher — triggers on GET STARTED
     val permissions = setOf(
@@ -131,9 +131,8 @@ fun OnboardingScreen(
                 0 -> PageHook()
                 1 -> PageSmartDetection()
                 2 -> PageHowItWorks()
-                3 -> PageCalendarPreview()
-                4 -> PageNotification()
-                5 -> PagePermissions()
+                3 -> PageNotification()
+                4 -> PagePermissions()
             }
         }
 
@@ -218,7 +217,7 @@ private fun PageHook() {
                 Text(
                     text = "World Health Organisation recommends",
                     color = RamsTextMuted,
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontFamily = VictorMono,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 1.1.sp,
@@ -242,7 +241,7 @@ private fun PageHook() {
                 Text(
                     text = "minutes of walks daily",
                     color = RamsTextMuted,
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontFamily = VictorMono,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 1.1.sp,
@@ -283,11 +282,11 @@ private fun PageSmartDetection() {
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
 
         Text(
-            text = "But not all steps count",
+            text = "But not all walks count",
             color = Color.Black.copy(alpha = 0.6f),
             fontSize = 16.sp,
             fontFamily = VictorMono,
@@ -301,19 +300,19 @@ private fun PageSmartDetection() {
             Column(modifier = Modifier.padding(20.dp)) {
                 ChipLabel(text = "WHAT COUNTS", color = GreenAccent)
                 Spacer(modifier = Modifier.height(16.dp))
-                DetectionRow(text = "40 min continuous walks", isValid = true)
+                DetectionRow(text = "40 minute continuous walks", isValid = true)
                 Spacer(modifier = Modifier.height(8.dp))
-                DetectionRow(text = "All walks over 5 minutes", isValid = true)
+                DetectionRow(text = "Walks over 5 minutes", isValid = true)
                 Spacer(modifier = Modifier.height(8.dp))
-                DetectionRow(text = "Walk with traffic light stops", isValid = true)
+                DetectionRow(text = "Sum of walks over 5 minutes\nthat add up to 40 minutes", isValid = true)
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         RamsCard {
             Column(modifier = Modifier.padding(20.dp)) {
-                ChipLabel(text = "WHAT DOES NOT COUNT", color = RedAccent)
+                ChipLabel(text = "WHAT DOES NOT COUNT", color = OrangeAccent)
                 Spacer(modifier = Modifier.height(16.dp))
                 DetectionRow(text = "Kitchen and bathroom trips", isValid = false)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -343,123 +342,30 @@ private fun PageHowItWorks() {
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         FeatureCard(
             number = "01",
-            title = "AUTO SYNC",
+            title = "SYNC",
             description = "Connects with Google Fit.\nYour walks are detected automatically."
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         FeatureCard(
             number = "02",
-            title = "TRACK EVERYTHING",
-            description = "Days walked, kilometres covered.\nMonthly and yearly stats."
+            title = "TRACK",
+            description = "Days walked and kilometres covered\nare tracked automatically. This provides\nyou with monthly and yearly stats."
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         FeatureCard(
             number = "03",
             title = "MANUAL OVERRIDE",
-            description = "Left your phone at home?\nMark the day as walked manually."
+            description = "If you've left your phone at home,\nyou can mark the day as walked manually."
         )
     }
 }
 
-// ─── PAGE 4: CALENDAR PREVIEW ───────────────────────────────────────
 
-@Composable
-private fun PageCalendarPreview() {
-    val walkedDays = setOf(1,2,4,5,6,8,10,11,12,13,14,16,17,19,20,22,23,24,25)
-
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "Your walking calendar",
-            color = Color.Black.copy(alpha = 0.6f),
-            fontSize = 16.sp,
-            fontFamily = VictorMono,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        RamsCard {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                ChipLabel(text = "MARCH 2026", color = GreenAccent)
-                Spacer(modifier = Modifier.height(20.dp))
-
-                val days = (1..31).toList()
-                val rows = days.chunked(7)
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    rows.forEach { week ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            week.forEach { day ->
-                                val isWalked = walkedDays.contains(day)
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (isWalked) RamsSurface
-                                            else Color.Black.copy(alpha = 0.04f)
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = day.toString(),
-                                        fontFamily = JetBrainsMono,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 11.sp,
-                                        letterSpacing = (-0.5).sp,
-                                        color = if (isWalked) GreenAccent
-                                        else Color.Black.copy(alpha = 0.3f),
-                                        style = if (isWalked) {
-                                            androidx.compose.ui.text.TextStyle(
-                                                shadow = androidx.compose.ui.graphics.Shadow(
-                                                    color = GreenAccent.copy(alpha = 0.8f),
-                                                    offset = Offset.Zero,
-                                                    blurRadius = 20f
-                                                )
-                                            )
-                                        } else {
-                                            androidx.compose.ui.text.TextStyle.Default
-                                        }
-                                    )
-                                }
-                            }
-                            repeat(7 - week.size) {
-                                Spacer(modifier = Modifier.size(36.dp))
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Black circle, green number = you walked.",
-                    color = RamsTextMuted,
-                    fontSize = 11.sp,
-                    fontFamily = VictorMono,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
-
-// ─── PAGE 5: NOTIFICATION ───────────────────────────────────────────
+// ─── PAGE 4: NOTIFICATION ───────────────────────────────────────────
 
 @Composable
 private fun PageNotification() {
@@ -477,7 +383,7 @@ private fun PageNotification() {
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         RamsCard {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -520,7 +426,7 @@ private fun PageNotification() {
                             )
                         }
                         Text(
-                            text = "Hey Layzbug, no walk detected today.\nGet your ass moving! \uD83D\uDEB6",
+                            text = "Hey Layzbug, no walk detected today.\nGet your ass moving! 🍑",
                             color = Color.White.copy(alpha = 0.7f),
                             fontSize = 13.sp,
                             fontFamily = VictorMono,
@@ -529,23 +435,23 @@ private fun PageNotification() {
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "One notification per day. Only if\nyou haven't walked. Nothing else.",
-                    color = RamsTextMuted,
-                    fontSize = 11.sp,
-                    fontFamily = VictorMono,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
+        Spacer(modifier = Modifier.height(28.dp))
+
+        Text(
+                text = "One notification per day. Only if\nyou haven't walked. Nothing else.",
+            color = OrangeAccent,
+            fontSize = 14.sp,
+            fontFamily = VictorMono,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
-// ─── PAGE 6: PERMISSIONS ────────────────────────────────────────────
+// ─── PAGE 5: PERMISSIONS ────────────────────────────────────────────
 
 @Composable
 private fun PagePermissions() {
@@ -563,35 +469,30 @@ private fun PagePermissions() {
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         FeatureCard(
             number = "01",
-            title = "HEALTH CONNECT",
-            description = "Grant access to read your steps\nand walking data from Google Fit."
+            title = "PERMISSIONS",
+            description = "Grant access to send you notifications,\nread your steps and walking data\nfrom Google Fit."
         )
-        Spacer(modifier = Modifier.height(12.dp))
-        FeatureCard(
-            number = "02",
-            title = "HISTORICAL DATA",
-            description = "Allow access to past walking data\nso we can backfill your calendar."
-        )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
         FeatureCard(
             number = "03",
             title = "CLOUD SYNC",
             description = "Sign in with Google to sync your\nmanually marked walks across devices."
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Text(
-            text = "Cloud sync is optional. The app works\nfully without signing in. You can\nsign in later from the home screen.",
-            color = Color.Black.copy(alpha = 0.35f),
-            fontSize = 11.sp,
+            text = "Cloud sync is optional.",
+            color = OrangeAccent,
+            fontSize = 14.sp,
             fontFamily = VictorMono,
-            textAlign = TextAlign.Center,
-            lineHeight = 18.sp
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -626,23 +527,17 @@ private fun RamsCard(
 private fun ChipLabel(text: String, color: Color) {
     Row(
         modifier = Modifier
-            .height(24.dp)
+            .height(32.dp)
             .background(RamsChipBg, CircleShape)
             .border(1.dp, RamsBorder, CircleShape)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(4.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
         Text(
             text = text,
             color = color,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontFamily = VictorMono,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.sp
@@ -654,12 +549,12 @@ private fun ChipLabel(text: String, color: Color) {
 private fun DetectionRow(text: String, isValid: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         Text(
             text = if (isValid) "✓" else "✗",
-            color = if (isValid) GreenAccent else RedAccent,
-            fontSize = 14.sp,
+            color = if (isValid) GreenAccent else OrangeAccent,
+            fontSize = 16.sp,
             fontFamily = JetBrainsMono,
             fontWeight = FontWeight.Bold
         )
@@ -668,7 +563,7 @@ private fun DetectionRow(text: String, isValid: Boolean) {
             color = RamsTextMuted,
             fontSize = 12.sp,
             fontFamily = VictorMono,
-            lineHeight = 16.sp
+            lineHeight = 18.sp
         )
     }
 }
@@ -676,36 +571,24 @@ private fun DetectionRow(text: String, isValid: Boolean) {
 @Composable
 private fun FeatureCard(number: String, title: String, description: String) {
     RamsCard {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Text(
-                text = number,
-                color = OrangeAccent.copy(alpha = 0.3f),
-                fontSize = 28.sp,
-                fontFamily = JetBrainsMono,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-1).sp
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = title,
                     color = OrangeAccent,
                     fontSize = 12.sp,
                     fontFamily = VictorMono,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
+                    lineHeight = 20.sp
                 )
                 Text(
                     text = description,
                     color = RamsTextMuted,
                     fontSize = 12.sp,
                     fontFamily = VictorMono,
-                    lineHeight = 18.sp
+                    lineHeight = 20.sp
                 )
             }
         }
     }
-}
