@@ -83,7 +83,8 @@ class HomeViewModel @Inject constructor(
     ) { walks, _ ->
         val walkCount = walks.count { it.isWalked }
         val totalDistance = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0
-        StatsValue(value = walkCount, label = "Yearly", distanceKm = totalDistance)
+        val totalMinutes = walks.sumOf { it.minutes }
+        StatsValue(value = walkCount, label = "Yearly", distanceKm = totalDistance, totalMinutes = totalMinutes)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StatsValue(0, "Yearly"))
 
     val currentMonthWalks: StateFlow<StatsValue> = combine(
@@ -93,7 +94,8 @@ class HomeViewModel @Inject constructor(
         val monthName = today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
         val walkCount = walks.count { it.isWalked }
         val totalDistance = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0
-        StatsValue(value = walkCount, label = monthName, distanceKm = totalDistance)
+        val totalMinutes = walks.sumOf { it.minutes }
+        StatsValue(value = walkCount, label = monthName, distanceKm = totalDistance, totalMinutes = totalMinutes)
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -205,7 +207,7 @@ class HomeViewModel @Inject constructor(
                 // Always re-sync every day from Google Fit — let the algorithm decide.
                 // Never trust the cached database value (it could be from old/buggy logic).
                 val result = fitSyncManager.checkDailyWalk(date)
-                walkRepository.updateWalkFromGoogleFit(date, result.isWalked, result.distanceKm)
+                walkRepository.updateWalkFromGoogleFit(date, result.isWalked, result.distanceKm, result.totalMinutes)
                 if (result.isWalked) syncedCount++
                 delay(50)
             } catch (e: Exception) {

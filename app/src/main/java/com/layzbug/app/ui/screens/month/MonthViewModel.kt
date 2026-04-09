@@ -16,16 +16,29 @@ import java.time.YearMonth
 import javax.inject.Inject
 import com.layzbug.app.data.local.WalkEntity
 
-data class CalendarDayModel(val date: LocalDate, val walked: Boolean)
+data class CalendarDayModel(
+    val date: LocalDate,
+    val walked: Boolean,
+    val distanceKm: Double = 0.0,
+    val minutes: Long = 0L
+)
 
 @HiltViewModel
 class MonthViewModel @Inject constructor(
     private val fitSyncManager: FitSyncManager,
     private val walkRepository: WalkRepository,
-    private val authManager: AuthManager
+    private val authManager: AuthManager,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle
 ) : ViewModel() {
 
-    private val _currentMonth = MutableStateFlow(YearMonth.now())
+    // Read year/month from nav args immediately — no flicker
+    private val initialMonth: YearMonth = run {
+        val year = savedStateHandle.get<String>("year")?.toIntOrNull() ?: YearMonth.now().year
+        val month = savedStateHandle.get<String>("month")?.toIntOrNull() ?: YearMonth.now().monthValue
+        YearMonth.of(year, month)
+    }
+
+    private val _currentMonth = MutableStateFlow(initialMonth)
     private val _refreshTrigger = MutableStateFlow(0)
 
     private val _showSignInPrompt = MutableStateFlow(false)
@@ -48,7 +61,7 @@ class MonthViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = emptyList()  // Empty prevents showing wrong month
+            initialValue = buildInitialCalendarDays(initialMonth)
         )
 
     // Now includes distance from walk entities
@@ -61,26 +74,31 @@ class MonthViewModel @Inject constructor(
             walkRepository.getWalksForMonth(month.year, month.monthValue).map { entities ->
                 val count = entities.count { it.isWalked }
                 val distanceKm = Math.round(entities.sumOf { it.distanceKm } * 10.0) / 10.0
+                val totalMinutes = entities.sumOf { it.minutes }
                 val monthName = month.month.name.lowercase().replaceFirstChar { it.uppercase() }
                 StatsValue(
                     value = count,
                     label = "Walks in $monthName",
-                    distanceKm = distanceKm
+                    distanceKm = distanceKm,
+                    totalMinutes = totalMinutes
                 )
             }
         }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = buildInitialStats(_currentMonth.value)
+            initialValue = buildInitialStats(initialMonth)
         )
 
     private fun buildCalendarDays(month: YearMonth, entities: List<WalkEntity>): List<CalendarDayModel> {
         return (1..month.lengthOfMonth()).map { day ->
             val date = month.atDay(day)
+            val entity = entities.find { it.date == date }
             CalendarDayModel(
                 date = date,
-                walked = entities.find { it.date == date }?.isWalked ?: false
+                walked = entity?.isWalked ?: false,
+                distanceKm = entity?.distanceKm ?: 0.0,
+                minutes = entity?.minutes ?: 0L
             )
         }
     }
@@ -98,14 +116,15 @@ class MonthViewModel @Inject constructor(
         val cached = walkRepository.getCachedMonthData(month.year, month.monthValue)
         val count = cached?.count { it.isWalked } ?: 0
         val distanceKm = Math.round((cached?.sumOf { it.distanceKm } ?: 0.0) * 10.0) / 10.0
+        val totalMinutes = cached?.sumOf { it.minutes } ?: 0L
         val monthName = month.month.name.lowercase().replaceFirstChar { it.uppercase() }
-        return StatsValue(value = count, label = "Walks in $monthName", distanceKm = distanceKm)
+        return StatsValue(value = count, label = "Walks in $monthName", distanceKm = distanceKm, totalMinutes = totalMinutes)
     }
 
     fun loadMonthData(month: YearMonth) {
         if (_currentMonth.value != month) {
             _currentMonth.value = month
-            _refreshTrigger.value++ // Force immediate refresh to clear old data
+            _refreshTrigger.value++
         }
     }
 

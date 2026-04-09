@@ -98,89 +98,83 @@ fun MonthHero(
                 }
             }
 
-            // Metrics row
+            // Metrics row — 3 equal columns separated by dividers
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom
             ) {
-                // Days walked
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    Text(
-                        text = stats.value.toString(),
-                        color = MonthAccent,
-                        fontSize = 36.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = (-1.8).sp,
-                        lineHeight = 1.sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = MonthAccent.copy(alpha = 0.8f),
-                                offset = Offset.Zero,
-                                blurRadius = 30f
-                            )
-                        )
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "DAYS WALKED",
-                        color = RamsTextMuted,
-                        fontSize = 10.sp,
-                        fontFamily = VictorMono,
-                        letterSpacing = 0.8.sp,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
-
-                // Vertical divider
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 4.dp)
-                        .width(1.dp)
-                        .height(40.dp)
-                        .background(RamsDivider)
+                MetricColumn(
+                    value = stats.value.toString(),
+                    label = "DAYS WALKED",
+                    modifier = Modifier.weight(1f)
                 )
 
-                // Kilometres
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Text(
-                        text = formatDistanceMonth(stats.distanceKm),
-                        color = MonthAccent,
-                        fontSize = 30.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = (-1.8).sp,
-                        lineHeight = 1.sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = MonthAccent.copy(alpha = 0.8f),
-                                offset = Offset.Zero,
-                                blurRadius = 30f
-                            )
-                        ),
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "KMS COVERED",
-                        color = RamsTextMuted,
-                        fontSize = 10.sp,
-                        fontFamily = VictorMono,
-                        letterSpacing = 0.8.sp,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
+                VerticalDivider()
+
+                MetricColumn(
+                    value = formatDistanceMonth(stats.distanceKm),
+                    label = "KMS COVERED",
+                    modifier = Modifier.weight(1f)
+                )
+
+                VerticalDivider()
+
+                MetricColumn(
+                    value = stats.totalMinutes.toString(),
+                    label = "MINS WALKED",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
+}
+
+@Composable
+private fun MetricColumn(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = value,
+            color = MonthAccent,
+            fontSize = 30.sp,
+            fontFamily = JetBrainsMono,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = (-1.8).sp,
+            lineHeight = 1.sp,
+            style = androidx.compose.ui.text.TextStyle(
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = MonthAccent.copy(alpha = 0.8f),
+                    offset = Offset.Zero,
+                    blurRadius = 30f
+                )
+            )
+        )
+        Text(
+            text = label,
+            color = RamsTextMuted,
+            fontSize = 10.sp,
+            fontFamily = VictorMono,
+            letterSpacing = 0.8.sp
+        )
+    }
+}
+
+@Composable
+private fun VerticalDivider() {
+    Box(
+        modifier = Modifier
+            .padding(bottom = 4.dp, start = 8.dp, end = 8.dp)
+            .width(1.dp)
+            .height(40.dp)
+            .background(RamsDivider)
+    )
 }
 
 @Composable

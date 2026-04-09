@@ -8,6 +8,7 @@ import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.local.AppDatabase
 import com.layzbug.app.data.local.MIGRATION_1_2
+import com.layzbug.app.data.local.MIGRATION_2_3
 import com.layzbug.app.data.local.WalkDao
 import com.layzbug.app.data.repository.SupabaseRepository
 import com.layzbug.app.data.repository.WalkRepository
@@ -30,7 +31,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "layzbug_db"
         )
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
     }
 

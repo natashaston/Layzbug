@@ -134,16 +134,19 @@ fun HomeScreen(
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Dimens.spaceBase)
+            verticalArrangement = Arrangement.spacedBy(Dimens.spaceXs)
         ) {
             YearlyStatsWithDropdown(
                 totalWalks = yearlyWalks.value,
                 totalDistanceKm = yearlyWalks.distanceKm,
+                totalMinutes = yearlyWalks.totalMinutes,
                 selectedYear = LocalDate.now().year,
                 showDropdown = false,
                 onClick = onNavigateToHistory,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Spacer(modifier = Modifier.height(0.dp))
 
             MonthHero(
                 stats = currentMonthWalks,

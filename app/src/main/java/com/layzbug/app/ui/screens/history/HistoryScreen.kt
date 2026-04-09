@@ -42,6 +42,7 @@ fun HistoryScreen(
     val monthsStats by viewModel.monthsStats.collectAsState()
     val yearTotal by viewModel.yearTotal.collectAsState()
     val yearDistanceKm by viewModel.yearDistanceKm.collectAsState()
+    val yearMinutes by viewModel.yearMinutes.collectAsState()
     val availableYears by viewModel.availableYears.collectAsState()
 
     LazyVerticalGrid(
@@ -58,6 +59,7 @@ fun HistoryScreen(
             YearlyStatsWithDropdown(
                 totalWalks = yearTotal,
                 totalDistanceKm = yearDistanceKm,
+                totalMinutes = yearMinutes,
                 selectedYear = selectedYear,
                 availableYears = availableYears,
                 onYearSelected = { year -> viewModel.setSelectedYear(year) },

@@ -63,17 +63,12 @@ class WalkRepository @Inject constructor(
      * Google Fit walks are updated via updateWalkFromGoogleFit()
      */
     suspend fun updateManualWalk(date: LocalDate, isWalked: Boolean) {
-        // Update local DB (manual walks don't have distance — keep existing distance or 0)
-        val existingDistance = try {
-            val walks = walkDao.getWalksInRange(date, date)
-            var dist = 0.0
-            // We can't collect a Flow here easily, so we just set 0 for manual
-            dist
-        } catch (e: Exception) {
-            0.0
-        }
+        // Preserve existing distance and minutes from Google Fit if already synced
+        val existing = walkDao.getWalkByDate(date)
+        val existingDistance = existing?.distanceKm ?: 0.0
+        val existingMinutes = existing?.minutes ?: 0L
 
-        walkDao.upsertWalk(WalkEntity(date, isWalked, existingDistance))
+        walkDao.upsertWalk(WalkEntity(date, isWalked, existingDistance, existingMinutes))
         Log.d("WalkRepository", "✅ Updated local DB (manual): $date = $isWalked")
 
         // Track as manual walk
@@ -105,7 +100,7 @@ class WalkRepository @Inject constructor(
      * Update walk from Google Fit - does NOT sync to Supabase
      * Now includes distance data
      */
-    suspend fun updateWalkFromGoogleFit(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0) {
+    suspend fun updateWalkFromGoogleFit(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0, minutes: Long = 0L) {
         // Only update if not already a manual walk
         if (!manualWalks.contains(date)) {
             val existing = walkDao.getWalkByDate(date)
@@ -115,16 +110,20 @@ class WalkRepository @Inject constructor(
             // Always update distance if we have a better value
             val finalDistance = if (distanceKm > 0) distanceKm
             else existing?.distanceKm ?: 0.0
+            // Always update minutes from Google Fit
+            val finalMinutes = minutes
 
-            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance))
-            Log.d("WalkRepository", "✅ Updated from Google Fit: $date = $finalIsWalked (was: ${existing?.isWalked}), ${finalDistance}km")
+            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance, finalMinutes))
+            Log.d("WalkRepository", "✅ Updated from Google Fit: $date = $finalIsWalked (was: ${existing?.isWalked}), ${finalDistance}km, ${finalMinutes}min")
         } else {
-            // For manual walks, still update distance if we have it
-            if (distanceKm > 0) {
+            // For manual walks, still update distance and minutes if we have them
+            if (distanceKm > 0 || minutes > 0) {
                 val existing = walkDao.getWalkByDate(date)
-                if (existing != null && existing.distanceKm == 0.0) {
-                    walkDao.upsertWalk(WalkEntity(date, existing.isWalked, distanceKm))
-                    Log.d("WalkRepository", "📏 Updated distance for manual walk $date: ${distanceKm}km")
+                if (existing != null) {
+                    val newDistance = if (distanceKm > 0) distanceKm else existing.distanceKm
+                    val newMinutes = if (minutes > 0) minutes else existing.minutes
+                    walkDao.upsertWalk(WalkEntity(date, existing.isWalked, newDistance, newMinutes))
+                    Log.d("WalkRepository", "📏 Updated stats for manual walk $date: ${newDistance}km, ${newMinutes}min")
                 }
             } else {
                 Log.d("WalkRepository", "⏭️ Skipped $date - is manual walk")

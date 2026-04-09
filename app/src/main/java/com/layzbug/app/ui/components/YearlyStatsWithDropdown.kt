@@ -55,6 +55,7 @@ private val RamsChipBg = Color.White.copy(alpha = 0.03f)
 fun YearlyStatsWithDropdown(
     totalWalks: Int,
     totalDistanceKm: Double = 0.0,
+    totalMinutes: Long = 0L,
     selectedYear: Int,
     availableYears: List<Int> = emptyList(),
     onYearSelected: (Int) -> Unit = {},
@@ -155,89 +156,83 @@ fun YearlyStatsWithDropdown(
                 }
             }
 
-            // Metrics row: balanced with weight
+            // Metrics row — 3 equal columns separated by dividers
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom
             ) {
-                // Days walked
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    Text(
-                        text = totalWalks.toString(),
-                        color = RamsAccent,
-                        fontSize = 36.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = (-1.8).sp,
-                        lineHeight = 1.sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = RamsAccent.copy(alpha = 0.8f),
-                                offset = Offset.Zero,
-                                blurRadius = 30f
-                            )
-                        )
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "DAYS WALKED",
-                        color = RamsTextMuted,
-                        fontSize = 10.sp,
-                        fontFamily = VictorMono,
-                        letterSpacing = 0.8.sp,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
-
-                // Vertical divider
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 4.dp)
-                        .width(1.dp)
-                        .height(40.dp)
-                        .background(RamsDivider)
+                YearMetricColumn(
+                    value = totalWalks.toString(),
+                    label = "DAYS WALKED",
+                    modifier = Modifier.weight(1f)
                 )
 
-                // Kilometres
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Text(
-                        text = formatDistanceRams(totalDistanceKm),
-                        color = RamsAccent,
-                        fontSize = 30.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = (-1.8).sp,
-                        lineHeight = 1.sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = RamsAccent.copy(alpha = 0.8f),
-                                offset = Offset.Zero,
-                                blurRadius = 30f
-                            )
-                        ),
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "KMS COVERED",
-                        color = RamsTextMuted,
-                        fontSize = 10.sp,
-                        fontFamily = VictorMono,
-                        letterSpacing = 0.8.sp,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
+                YearVerticalDivider()
+
+                YearMetricColumn(
+                    value = formatDistanceRams(totalDistanceKm),
+                    label = "KMS COVERED",
+                    modifier = Modifier.weight(1f)
+                )
+
+                YearVerticalDivider()
+
+                YearMetricColumn(
+                    value = totalMinutes.toString(),
+                    label = "MINS WALKED",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
+}
+
+@Composable
+private fun YearMetricColumn(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = value,
+            color = RamsAccent,
+            fontSize = 30.sp,
+            fontFamily = JetBrainsMono,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = (-1.8).sp,
+            lineHeight = 1.sp,
+            style = androidx.compose.ui.text.TextStyle(
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = RamsAccent.copy(alpha = 0.8f),
+                    offset = Offset.Zero,
+                    blurRadius = 30f
+                )
+            )
+        )
+        Text(
+            text = label,
+            color = RamsTextMuted,
+            fontSize = 10.sp,
+            fontFamily = VictorMono,
+            letterSpacing = 0.8.sp
+        )
+    }
+}
+
+@Composable
+private fun YearVerticalDivider() {
+    Box(
+        modifier = Modifier
+            .padding(bottom = 4.dp, start = 8.dp, end = 8.dp)
+            .width(1.dp)
+            .height(40.dp)
+            .background(RamsDivider)
+    )
 }
 
 @Composable
@@ -311,10 +306,6 @@ private fun StatusPulseDot() {
     )
 }
 
-/**
- * Format distance for the Rams-style display.
- * Compact format without "km" suffix since the label says "KMS".
- */
 private fun formatDistanceRams(km: Double): String {
     return if (km >= 1000) {
         "%,.0f".format(km)
