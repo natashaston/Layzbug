@@ -46,13 +46,13 @@ fun MonthCard(
     monthName: String,
     walkCount: Int,
     distanceKm: Double = 0.0,
+    totalMinutes: Long = 0L,
     isEnabled: Boolean = true,
     isCurrentMonth: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
     if (!isEnabled) {
-        // Disabled skeleton card
         DisabledMonthCard(monthName = monthName, modifier = modifier)
         return
     }
@@ -107,82 +107,83 @@ fun MonthCard(
                 }
             }
 
-            // Metrics: DAYS left, KMS right
+            // Metrics row — 3 equal columns separated by dividers
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.Bottom
             ) {
-                // Days — left aligned
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = walkCount.toString(),
-                        color = MonthAccent,
-                        fontSize = 32.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = (-1.8).sp,
-                        lineHeight = 1.sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = MonthAccent.copy(alpha = 0.8f),
-                                offset = Offset.Zero,
-                                blurRadius = 30f
-                            )
-                        )
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "DAYS",
-                        color = RamsTextMuted,
-                        fontSize = 10.sp,
-                        fontFamily = VictorMono,
-                        letterSpacing = 0.8.sp,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
-
-                // Divider
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 4.dp)
-                        .width(1.dp)
-                        .height(40.dp)
-                        .background(RamsDivider)
+                MetricColumnSmall(
+                    value = walkCount.toString(),
+                    label = "DAYS WALKED",
+                    modifier = Modifier.weight(1f)
                 )
 
-                // KMS — right aligned
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = formatDistanceCompact(distanceKm),
-                        color = MonthAccent,
-                        fontSize = 26.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = (-1.8).sp,
-                        lineHeight = 1.sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = MonthAccent.copy(alpha = 0.8f),
-                                offset = Offset.Zero,
-                                blurRadius = 30f
-                            )
-                        ),
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "KMS",
-                        color = RamsTextMuted,
-                        fontSize = 10.sp,
-                        fontFamily = VictorMono,
-                        letterSpacing = 0.8.sp,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
+                VerticalDividerSmall()
+
+                MetricColumnSmall(
+                    value = formatDistanceCompact(distanceKm),
+                    label = "KMS COVERED",
+                    modifier = Modifier.weight(1f)
+                )
+
+                VerticalDividerSmall()
+
+                MetricColumnSmall(
+                    value = totalMinutes.toString(),
+                    label = "MINS WALKED",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
+}
+
+@Composable
+private fun MetricColumnSmall(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = value,
+            color = MonthAccent,
+            fontSize = 30.sp,
+            fontFamily = JetBrainsMono,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = (-1.8).sp,
+            lineHeight = 1.sp,
+            style = androidx.compose.ui.text.TextStyle(
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = MonthAccent.copy(alpha = 0.8f),
+                    offset = Offset.Zero,
+                    blurRadius = 30f
+                )
+            )
+        )
+        Text(
+            text = label,
+            color = RamsTextMuted,
+            fontSize = 10.sp,
+            fontFamily = VictorMono,
+            letterSpacing = 0.8.sp
+        )
+    }
+}
+
+@Composable
+private fun VerticalDividerSmall() {
+    Box(
+        modifier = Modifier
+            .padding(bottom = 4.dp, start = 8.dp, end = 8.dp)
+            .width(1.dp)
+            .height(40.dp)
+            .background(RamsDivider)
+    )
 }
 
 @Composable

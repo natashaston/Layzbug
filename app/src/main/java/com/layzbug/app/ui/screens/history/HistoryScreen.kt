@@ -46,16 +46,17 @@ fun HistoryScreen(
     val availableYears by viewModel.availableYears.collectAsState()
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        // Changed from Fixed(2) to Fixed(1)
+        columns = GridCells.Fixed(1),
         modifier = Modifier
             .fillMaxSize()
             .background(SurfaceColor)
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(gridHorizontalSpacing),
-        verticalArrangement = Arrangement.spacedBy(gridVerticalSpacing)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Yearly Stats — full width span
-        item(span = { GridItemSpan(2) }) {
+        // 1. Yearly Stats
+        item {
             YearlyStatsWithDropdown(
                 totalWalks = yearTotal,
                 totalDistanceKm = yearDistanceKm,
@@ -67,27 +68,28 @@ fun HistoryScreen(
             )
         }
 
-        // 2. Spacer after yearly stats
-        item(span = { GridItemSpan(2) }) {
-            Spacer(modifier = Modifier.height(Dimens.spaceBase))
-        }
-
-        // 3. Section Divider — full width span
-        item(span = { GridItemSpan(2) }) {
-            SectionDivider(title = "Monthly Breakdown")
-        }
-
-        // 4. Spacer after section divider
-        item(span = { GridItemSpan(2) }) {
+        // 2. Spacer
+        item {
             Spacer(modifier = Modifier.height(Dimens.spaceXs))
         }
 
-        // 5. Month cards — 2 per row
+        // 3. Section Divider
+        item {
+            SectionDivider(title = "Monthly Breakdown")
+        }
+
+        // 4. Spacer
+        item {
+            Spacer(modifier = Modifier.height(0.dp))
+        }
+
+        // 5. Month cards — now 1 per row by default
         items(monthsStats) { monthStat ->
             MonthCard(
                 monthName = getFullMonthName(monthStat.monthName),
                 walkCount = monthStat.walkCount,
                 distanceKm = monthStat.distanceKm,
+                totalMinutes = monthStat.totalMinutes,
                 isEnabled = monthStat.isEnabled,
                 isCurrentMonth = monthStat.year == java.time.LocalDate.now().year && monthStat.month == java.time.LocalDate.now().monthValue,
                 onClick = {
@@ -98,8 +100,8 @@ fun HistoryScreen(
             )
         }
 
-        // 6. Bottom padding — full width span
-        item(span = { GridItemSpan(2) }) {
+        // 6. Bottom padding
+        item {
             Spacer(modifier = Modifier.height(32.dp))
         }
     }

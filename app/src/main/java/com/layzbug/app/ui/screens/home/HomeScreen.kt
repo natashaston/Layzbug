@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -134,7 +135,7 @@ fun HomeScreen(
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Dimens.spaceXs)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             YearlyStatsWithDropdown(
                 totalWalks = yearlyWalks.value,
@@ -145,8 +146,6 @@ fun HomeScreen(
                 onClick = onNavigateToHistory,
                 modifier = Modifier.fillMaxWidth()
             )
-
-            Spacer(modifier = Modifier.height(0.dp))
 
             MonthHero(
                 stats = currentMonthWalks,
