@@ -3,6 +3,7 @@ package com.layzbug.app
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +16,7 @@ import com.layzbug.app.ui.navigation.LayzbugNavHost
 import com.layzbug.app.ui.theme.LayzbugTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import android.graphics.Color as AndroidColor
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -33,8 +35,6 @@ class MainActivity : ComponentActivity() {
                     Log.d("LAYZBUG", "Health Connect is READY")
             }
         }
-
-        enableEdgeToEdge()
 
         setContent {
             LayzbugTheme {

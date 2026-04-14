@@ -28,9 +28,9 @@ val OnErrorContainer = Color(0xFF73332F)
 
 // Background & Surface
 // We use SurfaceColor to avoid collision with the Surface() component
-val Background = Color(0xFFFDF7FF)
+val Background = Color(0xFFFFFFFF)
 val OnBackground = Color(0xFF1D1B20)
-val SurfaceColor = Color(0xFFFDF7FF)
+val SurfaceColor = Color(0xFFFFFFFF)
 val OnSurface = Color(0xFF1C1B20)
 val SurfaceVariant = Color(0xFFE6E0EC)
 val OnSurfaceVariant = Color(0xFF48454E)

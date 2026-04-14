@@ -15,6 +15,7 @@ health-connect = "1.1.0-alpha11"
 firebase-bom = "33.7.0"
 google-services = "4.4.2"
 play-services-auth = "21.2.0"
+ui = "1.10.6"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -45,3 +46,4 @@ play-services-auth = { group = "com.google.android.gms", name = "play-services-a
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-ui = { group = "androidx.compose.ui", name = "ui", version.ref = "ui" }
