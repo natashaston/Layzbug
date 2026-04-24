@@ -329,7 +329,7 @@ private fun SyncInfoBottomSheet(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Layzbug shows your walks automatically on this phone. If you go for a walk without your phone or watch, you can mark that day yourself.\n\nJust note, if not signed in, these marked days may not appear on new logged in devices. Only the walks tracked automatically will show.",
+                text = "Layzbug automatically tracks your 30 minute walks on this device. If you go for a walk without your phone, you can manually mark that day as walked.\n\nJust note, if not signed in, these marked days may not appear on other devices. Only the walks tracked automatically will show.",
                 color = bodyTextMuted,
                 fontSize = 15.sp,
                 fontFamily = victorMono,

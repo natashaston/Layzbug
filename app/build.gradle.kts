@@ -76,6 +76,7 @@ dependencies {
     implementation("androidx.graphics:graphics-shapes:1.0.0-beta01")
     implementation("androidx.graphics:graphics-path:1.0.1")
     implementation("androidx.compose.foundation:foundation:1.7.5")
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // Room
     implementation(libs.androidx.room.runtime)
