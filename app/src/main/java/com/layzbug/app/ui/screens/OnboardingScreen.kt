@@ -249,10 +249,10 @@ private fun PageHook() {
 
 @Composable
 private fun PageGoal() {
-    val infiniteTransition = rememberInfiniteTransition(label = "floating_emojis")
-
     Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -264,125 +264,72 @@ private fun PageGoal() {
             color = Color.Black.copy(alpha = 0.8f)
         )
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(40.dp))
 
-        // 2. The Circular Hero Area
-        Box(contentAlignment = Alignment.Center) {
-
-            // Central Circular RamsCard
-            Box(
-                modifier = Modifier
-                    .size(280.dp)
-                    .clip(CircleShape)
-                    .background(RamsSurface)
-                    .border(1.dp, RamsBorder, CircleShape)
-                    .drawBehind {
-                        val gridSize = 4.dp.toPx()
-                        for (x in 0..size.width.toInt() step gridSize.toInt()) {
-                            drawLine(
-                                RamsGridLine,
-                                Offset(x.toFloat(), 0f),
-                                Offset(x.toFloat(), size.height),
-                                1.dp.toPx()
-                            )
-                        }
-                        for (y in 0..size.height.toInt() step gridSize.toInt()) {
-                            drawLine(
-                                RamsGridLine,
-                                Offset(0f, y.toFloat()),
-                                Offset(size.width, y.toFloat()),
-                                1.dp.toPx()
-                            )
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "30",
-                        color = OrangeAccent,
-                        fontSize = 100.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = (-4).sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = OrangeAccent.copy(alpha = 0.5f),
-                                offset = Offset.Zero,
-                                blurRadius = 50f
-                            )
+        // The Circular Hero Area
+        Box(
+            modifier = Modifier
+                .size(280.dp)
+                .clip(CircleShape)
+                .background(RamsSurface)
+                .border(1.dp, RamsBorder, CircleShape)
+                .drawBehind {
+                    val gridSize = 4.dp.toPx()
+                    for (x in 0..size.width.toInt() step gridSize.toInt()) {
+                        drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
+                    }
+                    for (y in 0..size.height.toInt() step gridSize.toInt()) {
+                        drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "30",
+                    color = OrangeAccent,
+                    fontSize = 100.sp,
+                    fontFamily = JetBrainsMono,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = (-4).sp,
+                    style = androidx.compose.ui.text.TextStyle(
+                        shadow = androidx.compose.ui.graphics.Shadow(
+                            color = OrangeAccent.copy(alpha = 0.5f),
+                            offset = Offset.Zero,
+                            blurRadius = 50f
                         )
                     )
-                    Text(
-                        text = "MINUTES OF",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        text = "WALKING",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                )
+                Text(
+                    text = "MINUTES OF",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontFamily = JetBrainsMono,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "WALKING",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontFamily = JetBrainsMono,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                    textAlign = TextAlign.Center
+                )
             }
-
-            // Pendulum sweep — each element swings individually along the bottom arc
-            val pendulumAngle by infiniteTransition.animateFloat(
-                initialValue = 95f,   // bottom-left of circle
-                targetValue = 85f,     // bottom-right of circle
-                animationSpec = infiniteRepeatable(
-                    animation = tween(600, easing = EaseInOutSine),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "pendulum"
-            )
-
-            val orbitRadius = 200f
-
-            // Each element at its own angle offset — creates curved chain along arc
-            PendulumElement(angle = pendulumAngle + 12f, radius = orbitRadius) {
-                Text(text = "🙅🏼", fontSize = 28.sp)
-            }
-            PendulumElement(angle = pendulumAngle, radius = orbitRadius) {
-                Text(text = "🐂", fontSize = 28.sp)
-            }
-            PendulumElement(angle = pendulumAngle - 12f, radius = orbitRadius) {
-                Text(text = "💩", fontSize = 28.sp)
-            }
-
         }
+
+        // Emojis now outside the oval
+        Spacer(modifier = Modifier.height(40.dp))
+        Text(
+            text = "🙅🏼🐂💩",
+            fontSize = 28.sp
+        )
     }
 }
 
-@Composable
-private fun BoxScope.PendulumElement(
-    angle: Float,
-    radius: Float,
-    content: @Composable () -> Unit
-) {
-    val angleRad = Math.toRadians(angle.toDouble())
-    val offsetX = (kotlin.math.cos(angleRad) * radius).toFloat()
-    val offsetY = (kotlin.math.sin(angleRad) * radius).toFloat()
-
-    Box(
-        modifier = Modifier
-            .align(Alignment.Center)
-            .offset(x = offsetX.dp, y = offsetY.dp)
-            .graphicsLayer {
-                rotationZ = angle - 90f  // keep tangent to circle
-            }
-    ) {
-        content()
-    }
-}
 
 // ─── PAGE 3: SMART DETECTION ────────────────────────────────────────
 

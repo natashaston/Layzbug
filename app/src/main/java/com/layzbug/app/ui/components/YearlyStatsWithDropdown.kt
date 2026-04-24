@@ -105,7 +105,6 @@ fun YearlyStatsWithDropdown(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    StatusPulseDot()
                     Text(
                         text = "ANNUAL OVERVIEW",
                         color = RamsTextMuted,

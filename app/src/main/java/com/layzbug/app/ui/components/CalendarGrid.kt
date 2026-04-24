@@ -50,7 +50,7 @@ fun CalendarGrid(
             columns = GridCells.Fixed(7),
             contentPadding = PaddingValues(bottom = Dimens.spaceBase),
             horizontalArrangement = Arrangement.spacedBy(Dimens.spaceXs),
-            verticalArrangement = Arrangement.spacedBy(Dimens.spaceXl), // bigger gap between rows
+            verticalArrangement = Arrangement.spacedBy(Dimens.spaceXl),
             modifier = Modifier.fillMaxWidth()
         ) {
             items(
@@ -81,7 +81,7 @@ fun CalendarDayItem(
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp) // gap between oval and stats group
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         // Day oval
         Box(
@@ -116,29 +116,15 @@ fun CalendarDayItem(
             )
         }
 
-        // Stats group — kms and mins tightly stacked together
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = if (distanceKm > 0) "${"%.1f".format(distanceKm)}km" else "—",
-                fontFamily = VictorMono,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 10.sp,
-                letterSpacing = 1.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            )
-            Text(
-                text = if (minutes > 0) "${minutes}m" else "—",
-                fontFamily = VictorMono,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 10.sp,
-                letterSpacing = 1.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            )
-        }
+        // Minutes only — km is kept in the data model and shown in the bottom sheet
+        Text(
+            text = if (minutes > 0) "${minutes}m" else "—",
+            fontFamily = VictorMono,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 10.sp,
+            letterSpacing = 1.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
     }
 }

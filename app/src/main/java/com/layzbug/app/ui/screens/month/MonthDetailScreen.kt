@@ -22,12 +22,16 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.layzbug.app.R
 import com.layzbug.app.ui.components.CalendarGrid
-import com.layzbug.app.ui.components.EditWalkStatusBottomSheet
+import com.layzbug.app.ui.components.LayzbugBottomSheet
+import com.layzbug.app.ui.components.EditWalkStatusContent
 import com.layzbug.app.ui.components.MonthHero
 import com.layzbug.app.ui.theme.Dimens
 import com.layzbug.app.ui.theme.SurfaceColor
 import com.layzbug.app.data.viewmodel.MonthViewModel
+import com.layzbug.app.ui.components.LayzbugBottomSheet
+import com.layzbug.app.ui.components.RamsSnackbarHost
 import kotlinx.coroutines.launch
+import kotlinx.datetime.toKotlinLocalDate
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -98,9 +102,11 @@ fun MonthDetailScreen(
                     }
                 }
             }
+
             Activity.RESULT_CANCELED -> {
                 Log.d("MonthDetailScreen", "⚠️ Sign-in cancelled")
             }
+
             else -> {
                 Log.e("MonthDetailScreen", "❌ Unknown result: ${result.resultCode}")
             }
@@ -124,7 +130,7 @@ fun MonthDetailScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { RamsSnackbarHost(snackbarHostState) },
         containerColor = SurfaceColor
     ) { paddingValues ->
         Column(
@@ -153,7 +159,10 @@ fun MonthDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.Black.copy(alpha = 0.1f)))
+                Box(
+                    modifier = Modifier.weight(1f).height(1.dp)
+                        .background(Color.Black.copy(alpha = 0.1f))
+                )
                 Text(
                     text = "DAILY BREAKDOWN",
                     fontSize = 11.sp,
@@ -162,7 +171,10 @@ fun MonthDetailScreen(
                     letterSpacing = 4.sp,
                     color = Color.Black
                 )
-                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.Black.copy(alpha = 0.1f)))
+                Box(
+                    modifier = Modifier.weight(1f).height(1.dp)
+                        .background(Color.Black.copy(alpha = 0.1f))
+                )
             }
 
             CalendarGrid(
@@ -178,23 +190,29 @@ fun MonthDetailScreen(
 
     if (showEditSheet && selectedDate != null) {
         val walkDay = walkDays.find { it.date == selectedDate }
-        EditWalkStatusBottomSheet(
-            isVisible = showEditSheet,
-            dateLabel = "${selectedDate?.month?.name?.lowercase()?.replaceFirstChar { it.uppercase() }} ${selectedDate?.dayOfMonth}",
-            currentStatus = walkDay?.walked ?: false,
-            onWalked = {
+        var pendingOverride by remember(selectedDate) { mutableStateOf(walkDay?.walked ?: false) }
+
+        LayzbugBottomSheet(
+            onClose = {
+                // Commit the final state only when the user dismisses
                 selectedDate?.let {
-                    viewModel.setWalkStatus(it, true)
+                    if (pendingOverride) viewModel.setWalkStatus(it, true)
+                    else viewModel.setWalkStatus(it, false)
                 }
                 showEditSheet = false
             },
-            onNotWalked = {
-                selectedDate?.let {
-                    viewModel.setWalkStatus(it, false)
-                }
-                showEditSheet = false
-            },
-            onDismiss = { showEditSheet = false }
-        )
+            lightBackground = true,
+            showDragHandle = true
+        ) {
+            EditWalkStatusContent(
+                date = selectedDate!!.toKotlinLocalDate(),
+                currentStatus = walkDay?.walked ?: false,
+                distanceKm = walkDay?.distanceKm ?: 0.0,
+                durationMins = walkDay?.minutes ?: 0,
+                onWalked = { /* no-op — handled on sheet close */ },
+                onNotWalked = { /* no-op — handled on sheet close */ },
+                onManualOverrideChanged = { override -> pendingOverride = override }
+            )
+        }
     }
 }
