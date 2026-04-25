@@ -53,6 +53,10 @@ class MonthViewModel @Inject constructor(
     private val _showSignInPrompt = MutableStateFlow(false)
     val showSignInPrompt: StateFlow<Boolean> = _showSignInPrompt.asStateFlow()
 
+    // Simple StateFlow backed by authManager — updated after syncAfterSignIn
+    private val _isUserLoggedIn = MutableStateFlow(authManager.isLoggedIn)
+    val isUserLoggedIn: StateFlow<Boolean> = _isUserLoggedIn.asStateFlow()
+
     // Reads persisted "don't show again" from DataStore
     val suppressSyncPrompt: StateFlow<Boolean> = context.dataStore.data
         .map { prefs -> prefs[SUPPRESS_SYNC_PROMPT] ?: false }
@@ -164,11 +168,9 @@ class MonthViewModel @Inject constructor(
 
     fun syncAfterSignIn() {
         viewModelScope.launch {
-            // Push any locally marked walks that were made before sign-in
+            _isUserLoggedIn.value = true
             walkRepository.syncPendingManualWalks()
-            // Then pull from Supabase to get any walks from other devices
             walkRepository.syncFromSupabase()
-            // Start real-time listener
             walkRepository.startSupabaseSync()
         }
     }

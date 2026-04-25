@@ -46,23 +46,19 @@ fun LayzbugNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val healthConnectClient = HealthConnectClient.getOrCreate(context)
     val homeViewModel: HomeViewModel = hiltViewModel()
 
+    // isLoggedIn is now a StateFlow in HomeViewModel — observed here so any
+    // screen that calls homeViewModel.onUserSignedIn() updates the card instantly
+    val isLoggedIn by homeViewModel.isLoggedIn.collectAsState()
+
     val installationTracker = remember { InstallationTracker(context) }
-
     val authManager = remember { com.layzbug.app.data.auth.AuthManager(context) }
-    var isLoggedIn by remember { mutableStateOf(authManager.isLoggedIn) }
-
-    LaunchedEffect(Unit) {
-        snapshotFlow { isLoggedIn }
-    }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    val showTopBar = currentRoute != "splash"
-            && currentRoute != "onboarding"
+    val showTopBar = currentRoute != "splash" && currentRoute != "onboarding"
     val topBarAlpha by animateFloatAsState(
         targetValue = if (showTopBar) 1f else 0f,
         animationSpec = tween(400, easing = LinearEasing),
@@ -72,21 +68,15 @@ fun LayzbugNavHost() {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = MaterialTheme.colorScheme.surface
-            ) {
+            ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surface) {
                 Spacer(modifier = Modifier.height(16.dp))
-
                 Text(
                     text = "Layzbug",
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
                 )
-
                 HorizontalDivider()
-
                 Spacer(modifier = Modifier.height(8.dp))
-
                 if (isLoggedIn) {
                     NavigationDrawerItem(
                         label = { Text("Logout") },
@@ -94,7 +84,7 @@ fun LayzbugNavHost() {
                         onClick = {
                             scope.launch {
                                 authManager.signOut()
-                                isLoggedIn = false
+                                homeViewModel.onUserSignedOut()
                                 drawerState.close()
                             }
                         },
@@ -113,7 +103,7 @@ fun LayzbugNavHost() {
                             Text(
                                 text = when {
                                     currentRoute?.startsWith("details") == true -> {
-                                        val year = navBackStackEntry?.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
+                                        val year  = navBackStackEntry?.arguments?.getString("year")?.toIntOrNull()  ?: YearMonth.now().year
                                         val month = navBackStackEntry?.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
                                         YearMonth.of(year, month).month.getDisplayName(TextStyle.FULL, Locale.getDefault())
                                     }
@@ -125,22 +115,12 @@ fun LayzbugNavHost() {
                         },
                         navigationIcon = {
                             if (currentRoute == "home" && isLoggedIn) {
-                                IconButton(onClick = {
-                                    scope.launch { drawerState.open() }
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Menu,
-                                        contentDescription = "Menu",
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Menu", tint = MaterialTheme.colorScheme.onSurface)
                                 }
                             } else if (currentRoute != "home" && currentRoute != null) {
                                 IconButton(onClick = { navController.popBackStack() }) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Back",
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
                         },
@@ -159,49 +139,31 @@ fun LayzbugNavHost() {
                 startDestination = "splash",
                 modifier = Modifier.padding(innerPadding)
             ) {
-                // Splash
-                composable(
-                    route = "splash",
-                    exitTransition = { ExitTransition.None }
-                ) {
+                composable(route = "splash", exitTransition = { ExitTransition.None }) {
                     SplashScreen(
                         viewModel = homeViewModel,
                         onNavigateToOnboarding = {
-                            navController.navigate("onboarding") {
-                                popUpTo("splash") { inclusive = true }
-                            }
+                            navController.navigate("onboarding") { popUpTo("splash") { inclusive = true } }
                         },
                         onSyncComplete = {
-                            navController.navigate("home") {
-                                popUpTo("splash") { inclusive = true }
-                            }
+                            navController.navigate("home") { popUpTo("splash") { inclusive = true } }
                         }
                     )
                 }
 
-                // Onboarding (first install only)
-                // GET STARTED triggers permission request directly,
-                // then navigates to home
                 composable(
                     route = "onboarding",
-                    enterTransition = {
-                        fadeIn(animationSpec = tween(500))
-                    },
+                    enterTransition = { fadeIn(animationSpec = tween(500)) },
                     exitTransition = { ExitTransition.None }
                 ) {
                     OnboardingScreen(
                         onComplete = {
                             installationTracker.setOnboardingComplete()
-                            navController.navigate("home") {
-                                popUpTo("onboarding") { inclusive = true }
-                            }
+                            navController.navigate("home") { popUpTo("onboarding") { inclusive = true } }
                         }
                     )
                 }
 
-                // Permissions route removed — onboarding handles all permission requests
-
-                // Home
                 composable(
                     route = "home",
                     enterTransition = { EnterTransition.None },
@@ -209,9 +171,8 @@ fun LayzbugNavHost() {
                 ) {
                     HomeScreen(
                         onNavigateToHistory = {
-                            if (navController.currentDestination?.route != "history") {
+                            if (navController.currentDestination?.route != "history")
                                 navController.navigate("history")
-                            }
                         },
                         onNavigateToMonthDetail = {
                             if (navController.currentDestination?.route != "details/{year}/{month}") {
@@ -220,13 +181,10 @@ fun LayzbugNavHost() {
                             }
                         },
                         isLoggedIn = isLoggedIn,
-                        onSignInSuccess = {
-                            isLoggedIn = true
-                        }
+                        onSignInSuccess = { homeViewModel.onUserSignedIn() }
                     )
                 }
 
-                // History
                 composable(
                     route = "history",
                     enterTransition = { EnterTransition.None },
@@ -242,7 +200,6 @@ fun LayzbugNavHost() {
                     )
                 }
 
-                // Month detail
                 composable(
                     route = "details/{year}/{month}",
                     enterTransition = { EnterTransition.None },
@@ -250,9 +207,8 @@ fun LayzbugNavHost() {
                     popEnterTransition = { EnterTransition.None },
                     popExitTransition = { ExitTransition.None }
                 ) { backStackEntry ->
-                    val year = backStackEntry.arguments?.getString("year")?.toIntOrNull() ?: YearMonth.now().year
+                    val year  = backStackEntry.arguments?.getString("year")?.toIntOrNull()  ?: YearMonth.now().year
                     val month = backStackEntry.arguments?.getString("month")?.toIntOrNull() ?: YearMonth.now().monthValue
-
                     val monthViewModel: com.layzbug.app.data.viewmodel.MonthViewModel = hiltViewModel()
 
                     LaunchedEffect(year, month) {
@@ -263,7 +219,9 @@ fun LayzbugNavHost() {
                         onBack = { navController.popBackStack() },
                         year = year,
                         month = month,
-                        viewModel = monthViewModel
+                        viewModel = monthViewModel,
+                        // Pass homeViewModel.onUserSignedIn so the card disappears instantly
+                        onSignInSuccess = { homeViewModel.onUserSignedIn() }
                     )
                 }
             }

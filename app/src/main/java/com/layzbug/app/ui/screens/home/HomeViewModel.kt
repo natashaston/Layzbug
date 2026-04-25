@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.layzbug.app.FitSyncManager
 import com.layzbug.app.data.InstallationTracker
+import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.repository.WalkRepository
 import com.layzbug.app.domain.StatsValue
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,27 +31,24 @@ data class HomeWalkDay(val label: String, val isWalked: Boolean, val date: Local
 class HomeViewModel @Inject constructor(
     private val fitSyncManager: FitSyncManager,
     private val walkRepository: WalkRepository,
-    private val installationTracker: InstallationTracker
+    private val installationTracker: InstallationTracker,
+    private val authManager: AuthManager
 ) : ViewModel() {
 
     private val today = LocalDate.now()
-
-    // Dynamic: Start from beginning of installation year
     private val startOfYear = installationTracker.getSyncStartDate()
-
-    // Dynamic: Current year start and end
     private val currentYearStart = LocalDate.of(today.year, 1, 1)
     private val currentYearEnd = LocalDate.of(today.year, 12, 31)
-
     private val startOfWeek = today.minusDays(6)
 
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
-    // Debug: visible sync status for troubleshooting
-    private var hasInitialSyncCompleted = false
+    // ── Auth state as a StateFlow so any screen can drive it ──────────
+    private val _isLoggedIn = MutableStateFlow(authManager.isLoggedIn)
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
-    // Refresh trigger to force UI updates after Google Fit sync
+    private var hasInitialSyncCompleted = false
     private val _refreshTrigger = MutableStateFlow(0)
 
     private val requiredPermissions = setOf(
@@ -60,30 +58,37 @@ class HomeViewModel @Inject constructor(
     )
 
     init {
-        Log.d("LayzbugSync", "📅 Installation date: ${installationTracker.getInstallationDate()}")
         Log.d("LayzbugSync", "📅 Sync start date: $startOfYear")
-        Log.d("LayzbugSync", "📅 Current year: ${today.year}")
+
+        viewModelScope.launch {
+            delay(500)
+            if (walkRepository.isSupabaseLoggedIn()) {
+                Log.d("LayzbugSync", "✅ Already logged in, starting Supabase listener")
+                walkRepository.startSupabaseSync()
+            }
+            if (!hasInitialSyncCompleted) {
+                val hasPerms = checkPermissions()
+                if (hasPerms) startInitialSync()
+            }
+        }
     }
 
     suspend fun checkPermissions(): Boolean {
         return try {
-            val granted = fitSyncManager.hasPermissions(requiredPermissions)
-            Log.d("LayzbugSync", "Permissions granted: $granted")
-            granted
+            fitSyncManager.hasPermissions(requiredPermissions)
         } catch (e: Exception) {
             Log.e("LayzbugSync", "Permission check failed: ${e.message}")
             false
         }
     }
 
-    // Shows CURRENT YEAR walks + distance
     val yearlyWalks: StateFlow<StatsValue> = combine(
         walkRepository.getWalksInRange(currentYearStart, currentYearEnd),
         _refreshTrigger
     ) { walks, _ ->
-        val walkCount = walks.count { it.isWalked }
+        val walkCount    = walks.count { it.isWalked }
         val totalDistance = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0
-        val totalMinutes = walks.sumOf { it.minutes }
+        val totalMinutes  = walks.sumOf { it.minutes }
         StatsValue(value = walkCount, label = "Yearly", distanceKm = totalDistance, totalMinutes = totalMinutes)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StatsValue(0, "Yearly"))
 
@@ -91,10 +96,10 @@ class HomeViewModel @Inject constructor(
         walkRepository.getWalksForMonth(today.year, today.monthValue),
         _refreshTrigger
     ) { walks, _ ->
-        val monthName = today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
-        val walkCount = walks.count { it.isWalked }
+        val monthName     = today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+        val walkCount     = walks.count { it.isWalked }
         val totalDistance = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0
-        val totalMinutes = walks.sumOf { it.minutes }
+        val totalMinutes  = walks.sumOf { it.minutes }
         StatsValue(value = walkCount, label = monthName, distanceKm = totalDistance, totalMinutes = totalMinutes)
     }.stateIn(
         viewModelScope,
@@ -107,81 +112,33 @@ class HomeViewModel @Inject constructor(
         _refreshTrigger
     ) { walks, _ ->
         (0..6).map { i ->
-            val date = startOfWeek.plusDays(i.toLong())
+            val date   = startOfWeek.plusDays(i.toLong())
             val record = walks.find { it.date == date }
             HomeWalkDay(
-                label = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                label    = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
                 isWalked = record?.isWalked ?: false,
-                date = date
+                date     = date
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    init {
-        Log.d("LayzbugSync", "HomeViewModel initialized - NOT auto-syncing")
-
-        // Check if we should auto-sync (coming from permission grant)
-        viewModelScope.launch {
-            delay(500)
-
-            if (walkRepository.isSupabaseLoggedIn()) {
-                Log.d("LayzbugSync", "✅ Already logged in, starting Supabase listener")
-                walkRepository.startSupabaseSync()
-            } else {
-                Log.d("LayzbugSync", "⚠️ Not logged in, skipping Supabase listener")
-            }
-
-            // Auto-trigger initial sync if permissions just granted
-            if (!hasInitialSyncCompleted) {
-                val hasPerms = checkPermissions()
-                if (hasPerms) {
-                    Log.d("LayzbugSync", "🎯 Permissions detected, auto-starting sync")
-                    startInitialSync()
-                }
-            }
-        }
-    }
-
     fun startInitialSync() {
-        if (hasInitialSyncCompleted) {
-            Log.d("LayzbugSync", "⏭️ Skipping sync - already completed")
-            return
-        }
-
+        if (hasInitialSyncCompleted) return
         viewModelScope.launch {
             _isSyncing.value = true
             try {
-                Log.d("LayzbugSync", "🚀 Starting initial sync...")
-
                 withContext(Dispatchers.IO) {
-                    // Check if Supabase is active
                     if (walkRepository.isSupabaseLoggedIn()) {
-                        Log.d("LayzbugSync", "✅ Supabase is active, syncing manual walks...")
                         walkRepository.syncFromSupabase()
                         walkRepository.startSupabaseSync()
-                        Log.d("LayzbugSync", "✅ Now syncing from Google Fit...")
-                        withTimeout(120_000) {
-                            autoSyncSteps()
-                        }
-                    } else {
-                        Log.d("LayzbugSync", "⚠️ Not logged in, syncing from Google Fit...")
-                        withTimeout(120_000) {
-                            autoSyncSteps()
-                        }
                     }
+                    withTimeout(120_000) { autoSyncSteps() }
                 }
-
-                // Force UI refresh after sync completes
-                Log.d("LayzbugSync", "⏳ Waiting for database writes to complete...")
-                delay(1000)  // Give time for all DB writes to commit
-
+                delay(1000)
                 _refreshTrigger.value++
-                Log.d("LayzbugSync", "🔄 Triggered UI refresh")
-
                 hasInitialSyncCompleted = true
-                Log.d("LayzbugSync", "✅ Initial sync complete")
             } catch (e: Exception) {
-                Log.e("LayzbugSync", "❌ Sync failed: ${e.message}", e)
+                Log.e("LayzbugSync", "Sync failed: ${e.message}", e)
             } finally {
                 _isSyncing.value = false
             }
@@ -189,33 +146,18 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun autoSyncSteps() {
-        if (!checkPermissions()) {
-            Log.w("LayzbugSync", "⚠️ Aborting sync: Permissions not granted")
-            return
-        }
-
-        // Sync from installation year start to today
+        if (!checkPermissions()) return
         val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
-        Log.d("LayzbugSync", "Syncing $daysToSync days from Google Fit (from $startOfYear to $today)...")
-
-        var syncedCount = 0
-
         for (i in daysToSync downTo 0) {
             val date = startOfYear.plusDays(i)
-
             try {
-                // Always re-sync every day from Google Fit — let the algorithm decide.
-                // Never trust the cached database value (it could be from old/buggy logic).
                 val result = fitSyncManager.checkDailyWalk(date)
                 walkRepository.updateWalkFromGoogleFit(date, result.isWalked, result.distanceKm, result.totalMinutes)
-                if (result.isWalked) syncedCount++
                 delay(50)
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
             }
         }
-
-        Log.d("LayzbugSync", "✅ Synced $syncedCount walked days from Google Fit")
     }
 
     fun toggleDay(date: LocalDate, currentStatus: Boolean) {
@@ -225,20 +167,24 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Called after user signs in (e.g. from HomeScreen banner).
-     * Re-syncs manual walks from Supabase and starts listener.
+     * Called after sign-in from ANY screen.
+     * Updates the shared isLoggedIn state immediately.
      */
     fun onUserSignedIn() {
         viewModelScope.launch {
+            _isLoggedIn.value = true
             try {
-                Log.d("LayzbugSync", "🔄 User signed in — syncing from Supabase...")
+                walkRepository.syncPendingManualWalks()
                 walkRepository.syncFromSupabase()
                 walkRepository.startSupabaseSync()
                 _refreshTrigger.value++
-                Log.d("LayzbugSync", "✅ Post-login Supabase sync complete")
             } catch (e: Exception) {
-                Log.e("LayzbugSync", "❌ Post-login sync failed: ${e.message}", e)
+                Log.e("LayzbugSync", "Post-login sync failed: ${e.message}", e)
             }
         }
+    }
+
+    fun onUserSignedOut() {
+        _isLoggedIn.value = false
     }
 }
