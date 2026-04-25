@@ -23,12 +23,8 @@ class WalkRepository @Inject constructor(
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val monthCache = MutableStateFlow<Map<YearMonth, List<WalkEntity>>>(emptyMap())
 
-    // Track which walks are manual vs Google Fit
-    private val manualWalks = mutableSetOf<LocalDate>()
-
-    fun getWalksInRange(start: LocalDate, end: LocalDate): Flow<List<WalkEntity>> {
-        return walkDao.getWalksInRange(start, end)
-    }
+    fun getWalksInRange(start: LocalDate, end: LocalDate): Flow<List<WalkEntity>> =
+        walkDao.getWalksInRange(start, end)
 
     fun getWalksForMonth(year: Int, month: Int): Flow<List<WalkEntity>> {
         val yearMonth = YearMonth.of(year, month)
@@ -36,9 +32,7 @@ class WalkRepository @Inject constructor(
             LocalDate.of(year, month, 1),
             LocalDate.of(year, month, LocalDate.of(year, month, 1).lengthOfMonth())
         ).map { entities ->
-            val currentCache = monthCache.value.toMutableMap()
-            currentCache[yearMonth] = entities
-            monthCache.value = currentCache
+            monthCache.value = monthCache.value.toMutableMap().also { it[yearMonth] = entities }
             entities
         }
     }
@@ -47,148 +41,132 @@ class WalkRepository @Inject constructor(
         return walkDao.getDistinctYears().map { years ->
             val currentYear = LocalDate.now().year
             val dbYears = years.map { it.toInt() }.toMutableList()
-            if (!dbYears.contains(currentYear)) {
-                dbYears.add(0, currentYear)
-            }
+            if (!dbYears.contains(currentYear)) dbYears.add(0, currentYear)
             dbYears.sorted().reversed()
         }
     }
 
-    suspend fun getWalkStatus(date: LocalDate): Boolean {
-        return walkDao.getWalkStatus(date) ?: false
-    }
+    suspend fun getWalkStatus(date: LocalDate): Boolean =
+        walkDao.getWalkStatus(date) ?: false
 
     /**
-     * Update walk - for MANUAL marks only
-     * Google Fit walks are updated via updateWalkFromGoogleFit()
+     * Manual mark — persists isManual=true in Room so it survives app restarts.
+     * Syncs immediately to Supabase if logged in; if not, syncPendingManualWalks()
+     * will push it after sign-in.
      */
     suspend fun updateManualWalk(date: LocalDate, isWalked: Boolean) {
-        // Preserve existing distance and minutes from Google Fit if already synced
         val existing = walkDao.getWalkByDate(date)
         val existingDistance = existing?.distanceKm ?: 0.0
-        val existingMinutes = existing?.minutes ?: 0L
+        val existingMinutes  = existing?.minutes ?: 0L
 
-        walkDao.upsertWalk(WalkEntity(date, isWalked, existingDistance, existingMinutes))
-        Log.d("WalkRepository", "✅ Updated local DB (manual): $date = $isWalked")
-
-        // Track as manual walk
-        if (isWalked) {
-            manualWalks.add(date)
-        } else {
-            manualWalks.remove(date)
-        }
+        // isManual=true persisted to Room — survives restarts
+        walkDao.upsertWalk(WalkEntity(date, isWalked, existingDistance, existingMinutes, isManual = true))
+        Log.d("WalkRepository", "✅ Manual mark saved to Room: $date = $isWalked, ${existingDistance}km, ${existingMinutes}min")
 
         // Invalidate cache
-        val yearMonth = YearMonth.of(date.year, date.month)
-        val currentCache = monthCache.value.toMutableMap()
-        currentCache.remove(yearMonth)
-        monthCache.value = currentCache
+        monthCache.value = monthCache.value.toMutableMap()
+            .also { it.remove(YearMonth.of(date.year, date.month)) }
 
-        // Sync manual walk to Supabase
+        // Sync to Supabase immediately — upserts in both walked and unwalked directions
         repositoryScope.launch {
-            Log.d("WalkRepository", "🔄 Syncing manual walk to Supabase: $date = $isWalked")
-
-            if (isWalked) {
-                supabaseRepository.syncManualWalk(date, true)
-            } else {
-                supabaseRepository.deleteManualWalk(date)
-            }
+            Log.d("WalkRepository", "🔄 Syncing to Supabase: $date = $isWalked")
+            supabaseRepository.syncManualWalk(date, isWalked, existingDistance, existingMinutes)
         }
     }
 
     /**
-     * Update walk from Google Fit - does NOT sync to Supabase
-     * Now includes distance data
+     * Health Connect update — never overwrites manual walked status.
+     * Always updates distance/minutes and re-syncs to Supabase if manual.
      */
-    suspend fun updateWalkFromGoogleFit(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0, minutes: Long = 0L) {
-        // Only update if not already a manual walk
-        if (!manualWalks.contains(date)) {
-            val existing = walkDao.getWalkByDate(date)
-            // Trust Google Fit: always use the latest result from the algorithm
-            // (allows correcting previously walked days when rules change)
-            val finalIsWalked = isWalked
-            // Always update distance if we have a better value
-            val finalDistance = if (distanceKm > 0) distanceKm
-            else existing?.distanceKm ?: 0.0
-            // Always update minutes from Google Fit
-            val finalMinutes = minutes
+    suspend fun updateWalkFromGoogleFit(
+        date: LocalDate,
+        isWalked: Boolean,
+        distanceKm: Double = 0.0,
+        minutes: Long = 0L
+    ) {
+        val existing = walkDao.getWalkByDate(date)
+        val isManual = existing?.isManual ?: false
 
-            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance, finalMinutes))
-            Log.d("WalkRepository", "✅ Updated from Google Fit: $date = $finalIsWalked (was: ${existing?.isWalked}), ${finalDistance}km, ${finalMinutes}min")
+        if (!isManual) {
+            val finalDistance = if (distanceKm > 0) distanceKm else existing?.distanceKm ?: 0.0
+            walkDao.upsertWalk(WalkEntity(date, isWalked, finalDistance, minutes, isManual = false))
+            Log.d("WalkRepository", "✅ Health Connect update: $date = $isWalked, ${finalDistance}km, ${minutes}min")
         } else {
-            // For manual walks, still update distance and minutes if we have them
+            // Manual day — preserve walked status, only update stats
             if (distanceKm > 0 || minutes > 0) {
-                val existing = walkDao.getWalkByDate(date)
-                if (existing != null) {
-                    val newDistance = if (distanceKm > 0) distanceKm else existing.distanceKm
-                    val newMinutes = if (minutes > 0) minutes else existing.minutes
-                    walkDao.upsertWalk(WalkEntity(date, existing.isWalked, newDistance, newMinutes))
-                    Log.d("WalkRepository", "📏 Updated stats for manual walk $date: ${newDistance}km, ${newMinutes}min")
+                val newDistance = if (distanceKm > 0) distanceKm else existing?.distanceKm ?: 0.0
+                val newMinutes  = if (minutes > 0) minutes else existing?.minutes ?: 0L
+                walkDao.upsertWalk(WalkEntity(date, existing!!.isWalked, newDistance, newMinutes, isManual = true))
+                Log.d("WalkRepository", "📏 Stats updated for manual day $date: ${newDistance}km, ${newMinutes}min")
+
+                // Re-sync updated stats to Supabase
+                repositoryScope.launch {
+                    supabaseRepository.syncManualWalk(date, existing.isWalked, newDistance, newMinutes)
                 }
-            } else {
-                Log.d("WalkRepository", "⏭️ Skipped $date - is manual walk")
             }
         }
     }
 
-    fun getCachedMonthData(year: Int, month: Int): List<WalkEntity>? {
-        return monthCache.value[YearMonth.of(year, month)]
+    fun getCachedMonthData(year: Int, month: Int): List<WalkEntity>? =
+        monthCache.value[YearMonth.of(year, month)]
+
+    /**
+     * Push all locally stored manual walks to Supabase.
+     * Reads from Room (persisted) so it works after app restarts.
+     * Called right after sign-in.
+     */
+    suspend fun syncPendingManualWalks() {
+        Log.d("WalkRepository", "📤 Pushing pending manual walks to Supabase...")
+        val manualWalks = walkDao.getAllManualWalks()
+        Log.d("WalkRepository", "📤 Found ${manualWalks.size} manual walks to push")
+        manualWalks.forEach { entity ->
+            supabaseRepository.syncManualWalk(
+                date       = entity.date,
+                isWalked   = entity.isWalked,
+                distanceKm = entity.distanceKm,
+                minutes    = entity.minutes
+            )
+            Log.d("WalkRepository", "  ✅ Pushed: ${entity.date} = ${entity.isWalked}, ${entity.distanceKm}km, ${entity.minutes}min")
+        }
+        Log.d("WalkRepository", "✅ Pending sync complete")
     }
 
     /**
-     * Sync manual walks FROM Supabase (called after login)
+     * Pull manual walks from Supabase into Room.
+     * Called after sign-in.
      */
     suspend fun syncFromSupabase() {
-        Log.d("WalkRepository", "📥 Syncing manual walks from Supabase...")
+        Log.d("WalkRepository", "📥 Pulling from Supabase...")
+        val remoteWalks = supabaseRepository.fetchAllManualWalks()
+        Log.d("WalkRepository", "📦 Fetched ${remoteWalks.size} walks")
 
-        val manualWalksFromCloud = supabaseRepository.fetchAllManualWalks()
-        Log.d("WalkRepository", "📦 Fetched ${manualWalksFromCloud.size} manual walks")
-
-        manualWalksFromCloud.forEach { walk ->
-            val date = LocalDate.parse(walk.walkDate)
-
-            // Mark as manual walk
-            if (walk.isWalked) {
-                manualWalks.add(date)
-            }
-
-            // Update local DB with distance from cloud
-            walkDao.upsertWalk(WalkEntity(date, walk.isWalked, walk.distanceKm))
-            Log.d("WalkRepository", "  ✅ Synced: $date = ${walk.isWalked}, ${walk.distanceKm}km")
+        remoteWalks.forEach { walk ->
+            val date     = LocalDate.parse(walk.walkDate)
+            val existing = walkDao.getWalkByDate(date)
+            val minutes  = if (walk.minutes > 0) walk.minutes else existing?.minutes ?: 0L
+            walkDao.upsertWalk(WalkEntity(date, walk.isWalked, walk.distanceKm, minutes, isManual = true))
+            Log.d("WalkRepository", "  ✅ Pulled: $date = ${walk.isWalked}, ${walk.distanceKm}km, ${minutes}min")
         }
-
-        Log.d("WalkRepository", "✅ Supabase sync complete")
+        Log.d("WalkRepository", "✅ Pull complete")
     }
 
     /**
-     * Start observing Supabase changes (real-time)
+     * Real-time Supabase listener.
      */
     fun startSupabaseSync() {
-        Log.d("WalkRepository", "👂 Starting Supabase real-time listener...")
-
+        Log.d("WalkRepository", "👂 Starting real-time listener...")
         repositoryScope.launch {
             supabaseRepository.observeManualWalks().collect { walks ->
-                Log.d("WalkRepository", "🔔 Supabase update: ${walks.size} manual walks")
-
+                Log.d("WalkRepository", "🔔 Real-time update: ${walks.size} walks")
                 walks.forEach { walk ->
-                    val date = LocalDate.parse(walk.walkDate)
-
-                    // Mark as manual walk
-                    if (walk.isWalked) {
-                        manualWalks.add(date)
-                    }
-
-                    // Update local DB with distance
-                    walkDao.upsertWalk(WalkEntity(date, walk.isWalked, walk.distanceKm))
+                    val date     = LocalDate.parse(walk.walkDate)
+                    val existing = walkDao.getWalkByDate(date)
+                    val minutes  = if (walk.minutes > 0) walk.minutes else existing?.minutes ?: 0L
+                    walkDao.upsertWalk(WalkEntity(date, walk.isWalked, walk.distanceKm, minutes, isManual = true))
                 }
             }
         }
     }
 
-    /**
-     * Check if user is logged into Supabase (has Google account)
-     */
-    fun isSupabaseLoggedIn(): Boolean {
-        return supabaseRepository.isLoggedIn
-    }
+    fun isSupabaseLoggedIn(): Boolean = supabaseRepository.isLoggedIn
 }

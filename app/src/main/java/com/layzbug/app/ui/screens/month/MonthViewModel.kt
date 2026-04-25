@@ -164,7 +164,11 @@ class MonthViewModel @Inject constructor(
 
     fun syncAfterSignIn() {
         viewModelScope.launch {
+            // Push any locally marked walks that were made before sign-in
+            walkRepository.syncPendingManualWalks()
+            // Then pull from Supabase to get any walks from other devices
             walkRepository.syncFromSupabase()
+            // Start real-time listener
             walkRepository.startSupabaseSync()
         }
     }

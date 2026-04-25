@@ -33,8 +33,9 @@ class AuthManager @Inject constructor(
     fun getGoogleSignInClient(): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
+            .requestId()       // ensures Google account ID is always returned
+            .requestProfile()  // keeps account cached across app restarts
             .build()
-
         return GoogleSignIn.getClient(context, gso)
     }
 
@@ -48,10 +49,6 @@ class AuthManager @Inject constructor(
         }
     }
 
-    /**
-     * Sign out and wait for Google Play Services to fully clear state.
-     * This prevents the ~30s delay when signing back in immediately after.
-     */
     suspend fun signOut() {
         try {
             Log.d("AuthManager", "🔄 Signing out...")
@@ -59,7 +56,6 @@ class AuthManager @Inject constructor(
             Log.d("AuthManager", "✅ Sign out complete")
         } catch (e: Exception) {
             Log.e("AuthManager", "❌ Sign out error: ${e.message}")
-            // Fall back to fire-and-forget
             getGoogleSignInClient().signOut()
         }
     }

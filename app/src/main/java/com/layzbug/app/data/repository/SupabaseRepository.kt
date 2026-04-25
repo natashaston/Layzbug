@@ -29,6 +29,8 @@ data class ManualWalk(
     val isWalked: Boolean,
     @SerialName("distance_km")
     val distanceKm: Double = 0.0,
+    @SerialName("minutes")
+    val minutes: Long = 0L,
     @SerialName("updated_at")
     val updatedAt: String? = null
 )
@@ -40,51 +42,82 @@ class SupabaseRepository @Inject constructor(
 ) {
     private val tableName = "manual_walks"
 
-    // Get userId dynamically every time it's needed
     private val currentUserId: String?
         get() = try {
-            GoogleSignIn.getLastSignedInAccount(context)?.id
+            val id = GoogleSignIn.getLastSignedInAccount(context)?.id
+            Log.d("SupabaseRepository", "currentUserId = $id")
+            id
         } catch (e: Exception) {
             Log.e("SupabaseRepository", "Failed to get userId: ${e.message}")
             null
         }
 
     val isLoggedIn: Boolean
-        get() {
-            val userId = currentUserId
-            Log.d("SupabaseRepository", "isLoggedIn check - userId: $userId")
-            return !userId.isNullOrEmpty()
-        }
+        get() = !currentUserId.isNullOrEmpty()
 
-    suspend fun syncManualWalk(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0) {
+    /**
+     * Upsert a manual walk to Supabase.
+     * Used for both walked=true and walked=false so unmarks propagate to other devices.
+     * Conflict target is (user_id, walk_date) — requires a unique constraint on those
+     * two columns in your Supabase table (add if missing).
+     */
+    suspend fun syncManualWalk(date: LocalDate, isWalked: Boolean, distanceKm: Double = 0.0, minutes: Long = 0L) {
         val userId = currentUserId
-
         if (userId == null) {
-            Log.w("SupabaseRepository", "⚠️ Not logged in, cannot sync $date")
+            Log.w("SupabaseRepository", "⚠️ Not logged in, skipping sync for $date")
             return
         }
 
+        val dateStr = date.toString()
+
         try {
-            Log.d("SupabaseRepository", "🚀 Syncing manual walk: $date = $isWalked, ${distanceKm}km (userId: $userId)")
+            // Check if row already exists for this user + date
+            val existing = supabase.from(tableName)
+                .select {
+                    filter {
+                        eq("user_id", userId)
+                        eq("walk_date", dateStr)
+                    }
+                }
+                .decodeList<ManualWalk>()
 
-            val walk = ManualWalk(
-                userId = userId,
-                walkDate = date.toString(),
-                isWalked = isWalked,
-                distanceKm = distanceKm
-            )
-
-            supabase.from(tableName).upsert(walk)
-
-            Log.d("SupabaseRepository", "✅ Synced manual walk: $date = $isWalked, ${distanceKm}km")
+            if (existing.isEmpty()) {
+                // INSERT new row
+                Log.d("SupabaseRepository", "➕ Inserting: $dateStr = $isWalked, ${distanceKm}km, ${minutes}min")
+                val walk = ManualWalk(
+                    userId     = userId,
+                    walkDate   = dateStr,
+                    isWalked   = isWalked,
+                    distanceKm = distanceKm,
+                    minutes    = minutes
+                )
+                supabase.from(tableName).insert(walk)
+                Log.d("SupabaseRepository", "✅ Inserted: $dateStr")
+            } else {
+                // UPDATE existing row — target by user_id + walk_date, never by id
+                Log.d("SupabaseRepository", "✏️ Updating: $dateStr = $isWalked, ${distanceKm}km, ${minutes}min")
+                supabase.from(tableName).update(
+                    {
+                        set("is_walked",   isWalked)
+                        set("distance_km", distanceKm)
+                        set("minutes",     minutes)
+                        set("updated_at",  java.time.Instant.now().toString())
+                    }
+                ) {
+                    filter {
+                        eq("user_id",   userId)
+                        eq("walk_date", dateStr)
+                    }
+                }
+                Log.d("SupabaseRepository", "✅ Updated: $dateStr = $isWalked")
+            }
         } catch (e: Exception) {
-            Log.e("SupabaseRepository", "❌ Failed to sync $date: ${e.message}", e)
+            Log.e("SupabaseRepository", "❌ Failed to sync $dateStr: ${e.message}", e)
         }
     }
 
     suspend fun fetchAllManualWalks(): List<ManualWalk> {
         val userId = currentUserId
-
         if (userId == null) {
             Log.w("SupabaseRepository", "⚠️ Not logged in, cannot fetch walks")
             return emptyList()
@@ -93,13 +126,10 @@ class SupabaseRepository @Inject constructor(
         return try {
             val walks = supabase.from(tableName)
                 .select(columns = Columns.ALL) {
-                    filter {
-                        eq("user_id", userId)
-                    }
+                    filter { eq("user_id", userId) }
                 }
                 .decodeList<ManualWalk>()
-
-            Log.d("SupabaseRepository", "📦 Fetched ${walks.size} manual walks for user: $userId")
+            Log.d("SupabaseRepository", "📦 Fetched ${walks.size} walks for user: $userId")
             walks
         } catch (e: Exception) {
             Log.e("SupabaseRepository", "❌ Failed to fetch walks: ${e.message}", e)
@@ -109,49 +139,31 @@ class SupabaseRepository @Inject constructor(
 
     fun observeManualWalks(): Flow<List<ManualWalk>> {
         val userId = currentUserId
-
         if (userId == null) {
             Log.w("SupabaseRepository", "⚠️ Not logged in, cannot observe walks")
             return emptyFlow()
         }
 
         Log.d("SupabaseRepository", "👂 Starting real-time listener for user: $userId")
-
         return try {
             supabase.channel("manual_walks_channel")
                 .postgresChangeFlow<PostgresAction>(schema = "public") {
-                    table = tableName
+                    table  = tableName
                     filter = "user_id=eq.$userId"
                 }
-                .map { action ->
-                    Log.d("SupabaseRepository", "🔔 Received realtime update: ${action::class.simpleName}")
+                .map {
+                    Log.d("SupabaseRepository", "🔔 Real-time update received")
                     fetchAllManualWalks()
                 }
         } catch (e: Exception) {
-            Log.e("SupabaseRepository", "❌ Failed to start realtime listener: ${e.message}", e)
+            Log.e("SupabaseRepository", "❌ Failed to start real-time listener: ${e.message}", e)
             emptyFlow()
         }
     }
 
+    // Kept for any legacy call sites — internally now just upserts with is_walked=false
     suspend fun deleteManualWalk(date: LocalDate) {
-        val userId = currentUserId
-
-        if (userId == null) {
-            Log.w("SupabaseRepository", "⚠️ Not logged in, cannot delete $date")
-            return
-        }
-
-        try {
-            supabase.from(tableName).delete {
-                filter {
-                    eq("user_id", userId)
-                    eq("walk_date", date.toString())
-                }
-            }
-
-            Log.d("SupabaseRepository", "🗑️ Deleted manual walk: $date")
-        } catch (e: Exception) {
-            Log.e("SupabaseRepository", "❌ Failed to delete $date: ${e.message}", e)
-        }
+        Log.d("SupabaseRepository", "deleteManualWalk called for $date — upserting is_walked=false instead")
+        syncManualWalk(date, isWalked = false, distanceKm = 0.0)
     }
 }
