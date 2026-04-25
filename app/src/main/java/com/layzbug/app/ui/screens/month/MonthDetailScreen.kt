@@ -98,6 +98,7 @@ fun MonthDetailScreen(
                             if (success) {
                                 viewModel.syncAfterSignIn()
                                 onSignInSuccess()
+                                showEditSheet = false   // close the bottom sheet
                                 showSignedInToast = true
                             }
                         } catch (e: Exception) {
