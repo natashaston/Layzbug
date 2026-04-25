@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,6 +74,7 @@ fun MonthDetailScreen(
 ) {
     var showEditSheet     by remember { mutableStateOf(false) }
     var showSignedInToast by remember { mutableStateOf(false) }
+    var showSyncInfoSheet by remember { mutableStateOf(false) }
     var selectedDate      by remember { mutableStateOf<LocalDate?>(null) }
 
     LaunchedEffect(year, month) {
@@ -125,7 +128,10 @@ fun MonthDetailScreen(
                 exit  = shrinkVertically(tween(300)) + fadeOut()
             ) {
                 Column {
-                    MonthSignedInToast(onDismiss = { showSignedInToast = false })
+                    MonthSignedInToast(
+                        onDismiss = { showSignedInToast = false },
+                        onInfo = { showSyncInfoSheet = true }
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
@@ -169,6 +175,11 @@ fun MonthDetailScreen(
         }
     }
 
+    // ── Sync info sheet ──────────────────────────────────────────────
+    if (showSyncInfoSheet) {
+        SyncedInfoSheet(onClose = { showSyncInfoSheet = false })
+    }
+
     // ── Edit walk status sheet ───────────────────────────────────────
     if (showEditSheet && selectedDate != null) {
         val walkDay = walkDays.find { it.date == selectedDate }
@@ -203,7 +214,10 @@ fun MonthDetailScreen(
 // ─── MONTH SIGNED-IN TOAST ───────────────────────────────────────────
 
 @Composable
-private fun MonthSignedInToast(onDismiss: () -> Unit) {
+private fun MonthSignedInToast(
+    onDismiss: () -> Unit,
+    onInfo: () -> Unit
+) {
     val ToastGreen      = Color(0xFF1A6E35)
     val ToastGreenLight = Color(0xFF2A9E50)
 
@@ -220,19 +234,7 @@ private fun MonthSignedInToast(onDismiss: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Logged in. Walks now sync across all devices",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontFamily = VictorMono,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.1.sp,
-                maxLines = 1,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(28.dp)
-                    .wrapContentHeight(Alignment.CenterVertically)
-            )
+            // Close icon — left
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -248,6 +250,123 @@ private fun MonthSignedInToast(onDismiss: () -> Unit) {
                     modifier = Modifier.size(16.dp)
                 )
             }
+
+            // Text — centre
+            Text(
+                text = "Logged in.",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+                    .height(28.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+            )
+
+            // Info icon — right
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .clickable { onInfo() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "i",
+                    color = Color(0xFF1A6E35),
+                    fontSize = 16.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp
+                )
+            }
+        }
+    }
+}
+
+// ─── SYNCED INFO SHEET ───────────────────────────────────────────────
+// Shown when user taps the info icon on the signed-in toast
+
+@Composable
+private fun SyncedInfoSheet(onClose: () -> Unit) {
+    val GoalGreenText    = Color(0xFF1A6E35)
+    val GoalGreenSurface = Color(0xFFD6F5E3)
+    val GoalGreenBorder  = Color(0xFF7DCFA0)
+    val bodyTextMuted    = Color.Black.copy(alpha = 0.6f)
+    val headlineColor    = Color(0xFF151619)
+
+    LayzbugBottomSheet(onClose = onClose, lightBackground = true) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(top = 20.dp, bottom = 40.dp)
+        ) {
+            // ── Green chip — CLOUD SYNC IS ON ────────────────────────
+            Row(
+                modifier = Modifier
+                    .height(28.dp)
+                    .background(GoalGreenText, CircleShape)
+                    .border(0.dp, GoalGreenBorder, CircleShape)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF00FF66))
+                )
+                Text(
+                    text = "CLOUD SYNC IS ON",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    fontFamily = VictorMono,
+                    letterSpacing = 1.1.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // ── Headline ─────────────────────────────────────────────
+            Text(
+                text = "Your walks are saved",
+                color = headlineColor,
+                fontSize = 18.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 28.sp,
+                letterSpacing = (-0.3).sp
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Description ──────────────────────────────────────────
+            Text(
+                text = "Your walks are now synced across all your devices. Whenever you log in to a new device using the same Google account, all your data will be fetched automatically.",
+                color = bodyTextMuted,
+                fontSize = 15.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 24.sp
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Text(
+                text = "This includes walks that were automatically detected by the app, as well as any days you marked manually.",
+                color = bodyTextMuted,
+                fontSize = 15.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 24.sp
+            )
         }
     }
 }

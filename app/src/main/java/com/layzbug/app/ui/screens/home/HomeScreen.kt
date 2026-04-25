@@ -80,8 +80,9 @@ fun HomeScreen(
     val currentMonthWalks by viewModel.currentMonthWalks.collectAsState()
 
     // Banner: show login card when not logged in, success toast when just logged in
-    var showSyncInfoSheet  by remember { mutableStateOf(false) }
-    var showSuccessToast   by remember { mutableStateOf(false) }
+    var showSyncInfoSheet      by remember { mutableStateOf(false) }
+    var showSuccessToast       by remember { mutableStateOf(false) }
+    var showSignedInInfoSheet  by remember { mutableStateOf(false) }
 
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -125,7 +126,10 @@ fun HomeScreen(
                     if (!isLoggedIn) {
                         GoogleSignInCard(onClick = { showSyncInfoSheet = true })
                     } else {
-                        SignedInToast(onDismiss = { showSuccessToast = false })
+                        SignedInToast(
+                            onDismiss = { showSuccessToast = false },
+                            onInfo = { showSignedInInfoSheet = true }
+                        )
                     }
                 }
 
@@ -157,6 +161,10 @@ fun HomeScreen(
                 }
             )
         }
+
+        if (showSignedInInfoSheet) {
+            HomeSignedInInfoSheet(onClose = { showSignedInInfoSheet = false })
+        }
     }
 }
 
@@ -165,7 +173,10 @@ fun HomeScreen(
 // padding(16.dp), no fixed height — intrinsic same as the login card.
 
 @Composable
-private fun SignedInToast(onDismiss: () -> Unit) {
+private fun SignedInToast(
+    onDismiss: () -> Unit,
+    onInfo: () -> Unit
+) {
     val ToastGreen      = Color(0xFF1A6E35)
     val ToastGreenLight = Color(0xFF2A9E50)
 
@@ -182,21 +193,7 @@ private fun SignedInToast(onDismiss: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Logged in. Walks now sync across all devices",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontFamily = VictorMono,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.1.sp,
-                maxLines = 1,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(28.dp)
-                    .wrapContentHeight(Alignment.CenterVertically)
-            )
-
-            // Close button — mirrors the 36dp Google logo circle
+            // Close — left
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -206,10 +203,45 @@ private fun SignedInToast(onDismiss: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                    imageVector = Icons.Default.Close,
                     contentDescription = "Dismiss",
                     tint = Color.White,
                     modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // Text — centre
+            Text(
+                text = "Logged in.",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+                    .height(28.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+            )
+
+            // Info — right, solid white circle with green "i"
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .clickable { onInfo() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "i",
+                    color = Color(0xFF1A6E35),
+                    fontSize = 16.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp
                 )
             }
         }
@@ -302,14 +334,14 @@ private fun SyncInfoBottomSheet(onClose: () -> Unit, onSignInClick: () -> Unit) 
             }
 
             Spacer(Modifier.height(32.dp))
-            Text("Login to save your walks", color = headlineColor, fontSize = 18.sp, fontFamily = victorMono, fontWeight = FontWeight.Bold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
+            Text("Sign in to save your walks", color = headlineColor, fontSize = 18.sp, fontFamily = victorMono, fontWeight = FontWeight.Bold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
             Spacer(Modifier.height(20.dp))
             Text(
                 "Layzbug automatically tracks your 30 minute walks on this device. If you go for a walk without your phone, you can manually mark that day as walked.\n\nJust note, if not signed in, these marked days may not appear on other devices. Only the walks tracked automatically will show.",
                 color = bodyTextMuted, fontSize = 15.sp, fontFamily = victorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp
             )
             Spacer(Modifier.height(28.dp))
-            Text("LOGIN IS OPTIONAL", color = orangeAccent, fontSize = 13.sp, fontFamily = jetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+            Text("SIGN IN IS OPTIONAL", color = orangeAccent, fontSize = 13.sp, fontFamily = jetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
             Spacer(Modifier.height(28.dp))
             Row(
                 modifier = Modifier.fillMaxWidth().height(56.dp)
@@ -321,8 +353,84 @@ private fun SyncInfoBottomSheet(onClose: () -> Unit, onSignInClick: () -> Unit) 
             ) {
                 GoogleGLogo(modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(12.dp))
-                Text("Login to sync across devices", color = Color.White, fontSize = 14.sp, fontFamily = victorMono, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
+                Text("Sign in to sync across devices", color = Color.White, fontSize = 14.sp, fontFamily = victorMono, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
             }
+        }
+    }
+}
+
+// ─── SIGNED-IN INFO SHEET ────────────────────────────────────────────
+
+@Composable
+private fun HomeSignedInInfoSheet(onClose: () -> Unit) {
+    val GoalGreenText = Color(0xFF1A6E35)
+    val bodyTextMuted = Color.Black.copy(alpha = 0.6f)
+    val headlineColor = Color(0xFF151619)
+
+    com.layzbug.app.ui.components.LayzbugBottomSheet(onClose = onClose, lightBackground = true) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(top = 20.dp, bottom = 40.dp)
+        ) {
+            // Green chip — CLOUD SYNC IS ON
+            Row(
+                modifier = Modifier
+                    .height(28.dp)
+                    .background(GoalGreenText, CircleShape)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(GreenAccent)
+                )
+                Text(
+                    text = "CLOUD SYNC IS ON",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    fontFamily = VictorMono,
+                    letterSpacing = 1.1.sp
+                )
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            Text(
+                text = "Your walks are saved",
+                color = headlineColor,
+                fontSize = 18.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 28.sp,
+                letterSpacing = (-0.3).sp
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                text = "Your walks are now synced across all your devices. Whenever you log in to a new device using the same Google account, all your data will be fetched automatically.",
+                color = bodyTextMuted,
+                fontSize = 15.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 24.sp
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                text = "This includes walks that were automatically detected by the app, as well as any days you marked manually.",
+                color = bodyTextMuted,
+                fontSize = 15.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 24.sp
+            )
         }
     }
 }
