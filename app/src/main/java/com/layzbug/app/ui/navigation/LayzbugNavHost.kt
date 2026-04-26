@@ -116,9 +116,11 @@ fun LayzbugNavHost(
     val notifHour    by notificationPrefs.notifHour.collectAsState(initial = 18)
     var showTimePicker   by remember { mutableStateOf(false) }
     var showHowItWorks   by remember { mutableStateOf(false) }
-    var showSyncInfoSheet        by remember { mutableStateOf(false) }
-    var showDrawerSignedInToast  by remember { mutableStateOf(false) }
-    var showDrawerInfoSheet      by remember { mutableStateOf(false) }
+    var showSyncInfoSheet          by remember { mutableStateOf(false) }
+    var showDrawerSignedInToast    by remember { mutableStateOf(false) }
+    var showDrawerInfoSheet        by remember { mutableStateOf(false) }
+    var showDrawerLoggedOutToast   by remember { mutableStateOf(false) }
+    var showDrawerLoggedOutInfo    by remember { mutableStateOf(false) }
 
     val currentUserEmail = remember(isLoggedIn) {
         if (isLoggedIn) GoogleSignIn.getLastSignedInAccount(context)?.email else null
@@ -348,7 +350,8 @@ fun LayzbugNavHost(
                                         authManager.signOut()
                                         homeViewModel.onUserSignedOut()
                                         showDrawerSignedInToast = false
-                                        drawerState.close()
+                                        showDrawerLoggedOutToast = true
+                                        // Stay in drawer — no drawerState.close()
                                     }
                                 }
                                 .padding(horizontal = 24.dp, vertical = 12.dp)
@@ -362,6 +365,21 @@ fun LayzbugNavHost(
                             )
                         }
                     } else {
+                        // ── Logged-out red toast (appears after logout) ──
+                        AnimatedVisibility(
+                            visible = showDrawerLoggedOutToast,
+                            enter = expandVertically(tween(300)) + fadeIn(tween(300)),
+                            exit  = shrinkVertically(tween(200)) + fadeOut(tween(200))
+                        ) {
+                            Column {
+                                DrawerLoggedOutToast(
+                                    onDismiss = { showDrawerLoggedOutToast = false },
+                                    onInfo    = { showDrawerLoggedOutInfo = true }
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+                        }
+
                         // ── Cloud sync off card ──────────────────────
                         Box(
                             modifier = Modifier
@@ -515,6 +533,11 @@ fun LayzbugNavHost(
         ) {
             OnboardingScreen(viewOnly = true, onComplete = { showHowItWorks = false })
         }
+    }
+
+    // ── Drawer logged-out info sheet ────────────────────────────────────
+    if (showDrawerLoggedOutInfo) {
+        DrawerLoggedOutInfoSheet(onClose = { showDrawerLoggedOutInfo = false })
     }
 
     // ── Drawer signed-in info sheet ────────────────────────────────────
@@ -697,6 +720,104 @@ private fun HourPickerDialog(currentHour: Int, onConfirm: (Int) -> Unit, onDismi
             }
         }
     )
+}
+
+// ─── DRAWER LOGGED-OUT TOAST ─────────────────────────────────────────
+
+@Composable
+private fun DrawerLoggedOutToast(onDismiss: () -> Unit, onInfo: () -> Unit) {
+    val ToastRed      = Color(0xFF8B1A1A)
+    val ToastRedLight = Color(0xFFB03030)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(36.dp))
+            .background(ToastRed)
+            .border(1.dp, ToastRedLight.copy(alpha = 0.4f), RoundedCornerShape(36.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp).clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.15f))
+                    .clickable { onDismiss() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(imageVector = Icons.Default.Close, contentDescription = "Dismiss", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+            Text(
+                text = "Logged out.",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+                    .height(28.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+            )
+            Box(
+                modifier = Modifier
+                    .size(36.dp).clip(CircleShape)
+                    .background(Color.White)
+                    .clickable { onInfo() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "i", color = ToastRed, fontSize = 16.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)
+            }
+        }
+    }
+}
+
+// ─── DRAWER LOGGED-OUT INFO SHEET ────────────────────────────────────
+
+@Composable
+private fun DrawerLoggedOutInfoSheet(onClose: () -> Unit) {
+    val WarnRed = Color(0xFF8B1A1A)
+
+    com.layzbug.app.ui.components.LayzbugBottomSheet(onClose = onClose, lightBackground = true) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(top = 20.dp, bottom = 40.dp)
+        ) {
+            // Red chip
+            Row(
+                modifier = Modifier
+                    .height(28.dp)
+                    .background(WarnRed, CircleShape)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(Color(0xFFFF6B6B)))
+                Text("CLOUD SYNC IS OFF", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontFamily = VictorMono, letterSpacing = 1.1.sp)
+            }
+            Spacer(Modifier.height(32.dp))
+            Text("You're now signed out", color = HeadlineColor, fontSize = 18.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Your existing walks are already saved on this device and will continue to show.",
+                color = BodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp
+            )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "However, any days you manually mark as walked from now on will not be synced to your account or other devices until you sign in again.",
+                color = BodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp
+            )
+        }
+    }
 }
 
 // ─── DRAWER SIGNED-IN TOAST ─────────────────────────────────────────
