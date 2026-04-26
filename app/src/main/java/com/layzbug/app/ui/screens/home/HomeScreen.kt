@@ -76,13 +76,18 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    val yearlyWalks      by viewModel.yearlyWalks.collectAsState()
+    val yearlyWalks       by viewModel.yearlyWalks.collectAsState()
     val currentMonthWalks by viewModel.currentMonthWalks.collectAsState()
+    val isSyncing         by viewModel.isSyncing.collectAsState()
+    val syncCompleted     by viewModel.syncCompleted.collectAsState()
 
     // Banner: show login card when not logged in, success toast when just logged in
     var showSyncInfoSheet      by remember { mutableStateOf(false) }
     var showSuccessToast       by remember { mutableStateOf(false) }
     var showSignedInInfoSheet  by remember { mutableStateOf(false) }
+    var showSyncInfoPopup      by remember { mutableStateOf(false) }
+    // syncToastDismissed lives in ViewModel so it survives navigation
+    val syncToastDismissed     by viewModel.syncToastDismissed.collectAsState()
 
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -115,6 +120,19 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // ── Sync toast — shows during and after first sync ──────
+                AnimatedVisibility(
+                    visible = (isSyncing || syncCompleted) && !syncToastDismissed,
+                    enter = expandVertically(tween(300)) + fadeIn(),
+                    exit  = shrinkVertically(tween(300)) + fadeOut()
+                ) {
+                    SyncProgressToast(
+                        isSyncing = isSyncing,
+                        onDismiss = { viewModel.dismissSyncToast() },
+                        onInfo    = { showSyncInfoPopup = true }
+                    )
+                }
+
                 // ── Auth card — always present, colours animate in place ─
                 // When logged in + showSuccessToast, it glows green then fades
                 // out as a unit. No layout shift ever occurs.
@@ -164,6 +182,13 @@ fun HomeScreen(
 
         if (showSignedInInfoSheet) {
             HomeSignedInInfoSheet(onClose = { showSignedInInfoSheet = false })
+        }
+
+        if (showSyncInfoPopup) {
+            SyncStatusInfoSheet(
+                isSyncing = isSyncing,
+                onClose = { showSyncInfoPopup = false }
+            )
         }
     }
 }
@@ -359,6 +384,196 @@ private fun SyncInfoBottomSheet(onClose: () -> Unit, onSignInClick: () -> Unit) 
     }
 }
 
+// ─── SYNC PROGRESS TOAST ─────────────────────────────────────────────
+// Blue while syncing — no close, info icon only.
+// Transitions to green on completion — close appears, info remains.
+
+@Composable
+private fun SyncProgressToast(
+    isSyncing: Boolean,
+    onDismiss: () -> Unit,
+    onInfo: () -> Unit
+) {
+    val SyncBlue   = Color(0xFF1A56A0)
+    val SyncBlueLight = Color(0xFF2A76D0)
+    val SyncGreen  = Color(0xFF1A6E35)
+    val SyncGreenLight = Color(0xFF2A9E50)
+
+    val bgColor    = if (isSyncing) SyncBlue   else SyncGreen
+    val borderColor = if (isSyncing) SyncBlueLight else SyncGreenLight
+    val statusText = if (isSyncing) "Syncing your walks..." else "Synced successfully."
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(36.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor.copy(alpha = 0.4f), RoundedCornerShape(36.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left: close only when sync done
+            if (!isSyncing) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.15f))
+                        .clickable { onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Text — left-aligned, fills remaining space
+            Text(
+                text = statusText,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 10.dp)
+                    .height(28.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+            )
+
+            // Right: info icon — always present
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .clickable { onInfo() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "i",
+                    color = bgColor,
+                    fontSize = 16.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp
+                )
+            }
+        }
+    }
+}
+
+// ─── SYNC STATUS INFO SHEET ───────────────────────────────────────────
+
+@Composable
+private fun SyncStatusInfoSheet(
+    isSyncing: Boolean,
+    onClose: () -> Unit
+) {
+    val bodyTextMuted = Color.Black.copy(alpha = 0.6f)
+    val headlineColor = Color(0xFF151619)
+    val SyncBlue     = Color(0xFF1A56A0)
+
+    com.layzbug.app.ui.components.LayzbugBottomSheet(onClose = onClose, lightBackground = true) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(top = 20.dp, bottom = 40.dp)
+        ) {
+            // Chip — blue while syncing, green when done
+            val chipBg   = if (isSyncing) SyncBlue else Color(0xFF1A6E35)
+            val chipText = if (isSyncing) "SYNCING IN PROGRESS" else "SYNC COMPLETE"
+            val dotColor = if (isSyncing) Color(0xFF90C8FF) else GreenAccent
+
+            Row(
+                modifier = Modifier
+                    .height(28.dp)
+                    .background(chipBg, CircleShape)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
+                Text(
+                    text = chipText,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    fontFamily = VictorMono,
+                    letterSpacing = 1.1.sp
+                )
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            Text(
+                text = if (isSyncing) "Fetching your walk history" else "Your walk history is ready",
+                color = headlineColor,
+                fontSize = 18.sp,
+                fontFamily = VictorMono,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 28.sp,
+                letterSpacing = (-0.3).sp
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            if (isSyncing) {
+                Text(
+                    text = "Layzbug is reading your walk history from your phone. This can take a moment as we go through up to a year of data.",
+                    color = bodyTextMuted,
+                    fontSize = 15.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 24.sp
+                )
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "You can close this alert once the sync is complete. You can use the app normally in the meantime.",
+                    color = bodyTextMuted,
+                    fontSize = 15.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 24.sp
+                )
+            } else {
+                Text(
+                    text = "All your walk history has been fetched from your phone and is ready to view.",
+                    color = bodyTextMuted,
+                    fontSize = 15.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 24.sp
+                )
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "From here on, Layzbug will sync any new walks automatically in the background.",
+                    color = bodyTextMuted,
+                    fontSize = 15.sp,
+                    fontFamily = VictorMono,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 24.sp
+                )
+            }
+        }
+    }
+}
+
 // ─── SIGNED-IN INFO SHEET ────────────────────────────────────────────
 
 @Composable
@@ -413,7 +628,7 @@ private fun HomeSignedInInfoSheet(onClose: () -> Unit) {
             Spacer(Modifier.height(20.dp))
 
             Text(
-                text = "Your walks are now synced across all your devices. Whenever you log in to a new device using the same Google account, all your data will be fetched automatically.",
+                text = "Your walks are now synced across all your devices. Whenever you log in to a new device using the same Google account, all your walks would be shown.",
                 color = bodyTextMuted,
                 fontSize = 15.sp,
                 fontFamily = VictorMono,

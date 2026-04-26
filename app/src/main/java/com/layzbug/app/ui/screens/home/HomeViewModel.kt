@@ -44,6 +44,12 @@ class HomeViewModel @Inject constructor(
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
+    private val _syncCompleted = MutableStateFlow(false)
+    val syncCompleted: StateFlow<Boolean> = _syncCompleted.asStateFlow()
+
+    private val _syncToastDismissed = MutableStateFlow(false)
+    val syncToastDismissed: StateFlow<Boolean> = _syncToastDismissed.asStateFlow()
+
     // ── Auth state as a StateFlow so any screen can drive it ──────────
     private val _isLoggedIn = MutableStateFlow(authManager.isLoggedIn)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
@@ -137,6 +143,7 @@ class HomeViewModel @Inject constructor(
                 delay(1000)
                 _refreshTrigger.value++
                 hasInitialSyncCompleted = true
+                _syncCompleted.value = true
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Sync failed: ${e.message}", e)
             } finally {
@@ -186,5 +193,9 @@ class HomeViewModel @Inject constructor(
 
     fun onUserSignedOut() {
         _isLoggedIn.value = false
+    }
+
+    fun dismissSyncToast() {
+        _syncToastDismissed.value = true
     }
 }

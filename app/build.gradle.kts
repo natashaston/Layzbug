@@ -22,7 +22,6 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Load Supabase credentials from local.properties
         val localProperties = Properties().apply {
             val localPropertiesFile = rootProject.file("local.properties")
             if (localPropertiesFile.exists()) {
@@ -77,6 +76,11 @@ dependencies {
     implementation("androidx.graphics:graphics-path:1.0.1")
     implementation("androidx.compose.foundation:foundation:1.7.5")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // WorkManager + Hilt integration
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    kapt("androidx.hilt:hilt-compiler:1.2.0")
 
     // Room
     implementation(libs.androidx.room.runtime)

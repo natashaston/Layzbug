@@ -2,11 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Health Connect -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+
+    <!-- Notifications (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Allows WorkManager to reschedule on device reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".LayzbugApp"
@@ -47,9 +56,27 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Handles "I walked today" and "Ok" notification actions -->
+        <receiver
+            android:name=".notifications.WalkActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.layzbug.app.ACTION_I_WALKED" />
+                <action android:name="com.layzbug.app.ACTION_DISMISS" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Removes default WorkManager initialiser so Hilt can provide its own -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="remove" />
+
     </application>
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
+
 </manifest>

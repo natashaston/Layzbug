@@ -282,7 +282,7 @@ fun EditWalkStatusContent(
                                 fontFamily = JetBrainsMono
                             )
                             Text(
-                                text = "No walk was detected by the app on this day. Since you've confirmed that you walked, we're counting this day toward your goal.",
+                                text = "No walk was detected by the app on this day. Since you've confirmed that you walked fo 30 minutes, we're counting this day toward your goal.",
                                 color = AlertOrangeText,
                                 fontSize = 15.sp,
                                 fontFamily = VictorMono,
