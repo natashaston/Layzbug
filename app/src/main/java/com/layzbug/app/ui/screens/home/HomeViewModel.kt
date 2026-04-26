@@ -54,7 +54,8 @@ class HomeViewModel @Inject constructor(
     private val _isLoggedIn = MutableStateFlow(authManager.isLoggedIn)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
-    private var hasInitialSyncCompleted = false
+    // Persisted in SharedPreferences — survives process death
+    private var hasInitialSyncCompleted = installationTracker.hasInitialSyncDone()
     private val _refreshTrigger = MutableStateFlow(0)
 
     private val requiredPermissions = setOf(
@@ -143,6 +144,7 @@ class HomeViewModel @Inject constructor(
                 delay(1000)
                 _refreshTrigger.value++
                 hasInitialSyncCompleted = true
+                installationTracker.markInitialSyncDone()  // persist so it never runs again
                 _syncCompleted.value = true
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Sync failed: ${e.message}", e)

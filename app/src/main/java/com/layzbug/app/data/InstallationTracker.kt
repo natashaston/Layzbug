@@ -1,81 +1,41 @@
 package com.layzbug.app.data
 
 import android.content.Context
-import android.content.SharedPreferences
 import java.time.LocalDate
-import javax.inject.Inject
-import javax.inject.Singleton
 
-/**
- * Tracks the app's first installation date.
- * This date is used as the starting point for Google Fit sync.
- */
-@Singleton
-class InstallationTracker @Inject constructor(
-    private val context: Context
-) {
-    private val prefs: SharedPreferences by lazy {
-        context.getSharedPreferences("layzbug_prefs", Context.MODE_PRIVATE)
-    }
+class InstallationTracker(context: Context) {
 
-    companion object {
-        private const val KEY_INSTALL_DATE = "install_date"
-        private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
-    }
+    private val prefs = context.getSharedPreferences("layzbug_install", Context.MODE_PRIVATE)
 
-    /**
-     * Gets the installation date. If not set, sets it to today and returns it.
-     * This ensures the date is captured on first launch.
-     */
-    fun getInstallationDate(): LocalDate {
-        val savedDate = prefs.getString(KEY_INSTALL_DATE, null)
+    // ── Onboarding ───────────────────────────────────────────────────
 
-        return if (savedDate != null) {
-            LocalDate.parse(savedDate)
+    fun isOnboardingComplete(): Boolean =
+        prefs.getBoolean("onboarding_complete", false)
+
+    fun setOnboardingComplete() =
+        prefs.edit().putBoolean("onboarding_complete", true).apply()
+
+    // ── Sync start date ───────────────────────────────────────────────
+    // First install: save today as the anchor. Subsequent launches: return saved date.
+
+    fun getSyncStartDate(): LocalDate {
+        val saved = prefs.getString("sync_start_date", null)
+        return if (saved != null) {
+            LocalDate.parse(saved)
         } else {
-            // First time - save today as installation date
-            val today = LocalDate.now()
-            prefs.edit().putString(KEY_INSTALL_DATE, today.toString()).apply()
-            today
+            val oneYearAgo = LocalDate.now().minusYears(1)
+            prefs.edit().putString("sync_start_date", oneYearAgo.toString()).apply()
+            oneYearAgo
         }
     }
 
-    /**
-     * Gets the sync start date - the beginning of the year when app was installed.
-     * For example:
-     * - Installed Nov 15, 2026 → Returns Jan 1, 2026
-     * - Installed Feb 3, 2027 → Returns Jan 1, 2027
-     */
-    fun getSyncStartDate(): LocalDate {
-        val installDate = getInstallationDate()
-        return LocalDate.of(installDate.year, 1, 1) // Start of installation year
-    }
+    // ── Initial full sync flag ────────────────────────────────────────
+    // Once the long historical sync completes, this is persisted so it
+    // never runs again on subsequent app launches.
 
-    /**
-     * Check if onboarding has been completed.
-     */
-    fun isOnboardingComplete(): Boolean {
-        return prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
-    }
+    fun hasInitialSyncDone(): Boolean =
+        prefs.getBoolean("initial_sync_done", false)
 
-    /**
-     * Mark onboarding as completed. Called after user finishes or skips onboarding.
-     */
-    fun setOnboardingComplete() {
-        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
-    }
-
-    /**
-     * For debugging - reset installation date
-     */
-    fun resetInstallationDate() {
-        prefs.edit().remove(KEY_INSTALL_DATE).apply()
-    }
-
-    /**
-     * For debugging - reset onboarding state
-     */
-    fun resetOnboarding() {
-        prefs.edit().remove(KEY_ONBOARDING_COMPLETE).apply()
-    }
+    fun markInitialSyncDone() =
+        prefs.edit().putBoolean("initial_sync_done", true).apply()
 }

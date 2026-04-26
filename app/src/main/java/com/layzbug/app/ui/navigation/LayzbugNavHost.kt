@@ -6,11 +6,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
@@ -320,19 +322,30 @@ fun LayzbugNavHost(
                     SectionLabel("ACCOUNT")
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    if (isLoggedIn) {
-                        // Signed-in toast — shows after login from drawer
-                        if (showDrawerSignedInToast) {
+                    // ── Signed-in toast ──────────────────────────
+                    AnimatedVisibility(
+                        visible = isLoggedIn && showDrawerSignedInToast,
+                        enter = expandVertically(tween(350)) + fadeIn(tween(350)),
+                        exit  = shrinkVertically(tween(250)) + fadeOut(tween(250))
+                    ) {
+                        Column {
                             DrawerSignedInToast(
                                 onDismiss = { showDrawerSignedInToast = false },
                                 onInfo    = { showDrawerInfoSheet = true }
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                         }
-                        // Email
-                        if (currentUserEmail != null) {
+                    }
+
+                    // ── Email ─────────────────────────────────────────
+                    AnimatedVisibility(
+                        visible = isLoggedIn && currentUserEmail != null,
+                        enter = expandVertically(tween(350)) + fadeIn(tween(350)),
+                        exit  = shrinkVertically(tween(250)) + fadeOut(tween(250))
+                    ) {
+                        Column {
                             Text(
-                                text = currentUserEmail,
+                                text = currentUserEmail ?: "",
                                 fontSize = 13.sp,
                                 fontFamily = VictorMono,
                                 fontWeight = FontWeight.Medium,
@@ -341,7 +354,14 @@ fun LayzbugNavHost(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                         }
-                        // Logout
+                    }
+
+                    // ── Logout CTA ────────────────────────────────────
+                    AnimatedVisibility(
+                        visible = isLoggedIn,
+                        enter = expandVertically(tween(350)) + fadeIn(tween(350)),
+                        exit  = shrinkVertically(tween(250)) + fadeOut(tween(250))
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -351,7 +371,6 @@ fun LayzbugNavHost(
                                         homeViewModel.onUserSignedOut()
                                         showDrawerSignedInToast = false
                                         showDrawerLoggedOutToast = true
-                                        // Stay in drawer — no drawerState.close()
                                     }
                                 }
                                 .padding(horizontal = 24.dp, vertical = 12.dp)
@@ -364,23 +383,29 @@ fun LayzbugNavHost(
                                 color = OrangeAccent
                             )
                         }
-                    } else {
-                        // ── Logged-out red toast (appears after logout) ──
-                        AnimatedVisibility(
-                            visible = showDrawerLoggedOutToast,
-                            enter = expandVertically(tween(300)) + fadeIn(tween(300)),
-                            exit  = shrinkVertically(tween(200)) + fadeOut(tween(200))
-                        ) {
-                            Column {
-                                DrawerLoggedOutToast(
-                                    onDismiss = { showDrawerLoggedOutToast = false },
-                                    onInfo    = { showDrawerLoggedOutInfo = true }
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                            }
-                        }
+                    }
 
-                        // ── Cloud sync off card ──────────────────────
+                    // ── Logged-out red toast ──────────────────────────
+                    AnimatedVisibility(
+                        visible = !isLoggedIn && showDrawerLoggedOutToast,
+                        enter = expandVertically(tween(350)) + fadeIn(tween(350)),
+                        exit  = shrinkVertically(tween(250)) + fadeOut(tween(250))
+                    ) {
+                        Column {
+                            DrawerLoggedOutToast(
+                                onDismiss = { showDrawerLoggedOutToast = false },
+                                onInfo    = { showDrawerLoggedOutInfo = true }
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
+
+                    // ── Cloud sync off card ───────────────────────────
+                    AnimatedVisibility(
+                        visible = !isLoggedIn,
+                        enter = expandVertically(tween(350)) + fadeIn(tween(350)),
+                        exit  = shrinkVertically(tween(250)) + fadeOut(tween(250))
+                    ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
