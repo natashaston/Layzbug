@@ -66,10 +66,12 @@ private val RedAccent     = Color(0xFFEF4444)
 
 @Composable
 fun OnboardingScreen(
-    onComplete: () -> Unit
+    onComplete: () -> Unit,
+    viewOnly: Boolean = false
 ) {
     var currentPage by remember { mutableIntStateOf(0) }
-    val totalPages = 6
+    // In viewOnly mode show pages 0-4 only (skip the permissions page)
+    val totalPages = if (viewOnly) 5 else 6
 
     val permissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
@@ -192,8 +194,9 @@ fun OnboardingScreen(
                         if (currentPage < totalPages - 1) {
                             currentPage++
                         } else {
-                            // Android 13+ needs explicit notification permission first
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (viewOnly) {
+                                onComplete()
+                            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 requestNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             } else {
                                 requestPermissionLauncher.launch(permissions)
@@ -204,8 +207,9 @@ fun OnboardingScreen(
                     shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp)
                 ) {
+                    val lastLabel = if (viewOnly) "CLOSE" else "GET STARTED"
                     Text(
-                        text = if (currentPage < totalPages - 1) "NEXT" else "GET STARTED",
+                        text = if (currentPage < totalPages - 1) "NEXT" else lastLabel,
                         color = OrangeAccent,
                         fontSize = 13.sp,
                         fontFamily = JetBrainsMono,
