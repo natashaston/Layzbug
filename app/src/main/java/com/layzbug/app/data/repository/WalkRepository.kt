@@ -67,11 +67,9 @@ class WalkRepository @Inject constructor(
         monthCache.value = monthCache.value.toMutableMap()
             .also { it.remove(YearMonth.of(date.year, date.month)) }
 
-        // Sync to Supabase immediately — upserts in both walked and unwalked directions
-        repositoryScope.launch {
-            Log.d("WalkRepository", "🔄 Syncing to Supabase: $date = $isWalked")
-            supabaseRepository.syncManualWalk(date, isWalked, existingDistance, existingMinutes)
-        }
+        // Sync to Supabase immediately — awaited so real-time listener sees correct state
+        Log.d("WalkRepository", "🔄 Syncing to Supabase: $date = $isWalked")
+        supabaseRepository.syncManualWalk(date, isWalked, existingDistance, existingMinutes)
     }
 
     /**
@@ -162,6 +160,7 @@ class WalkRepository @Inject constructor(
                     val date     = LocalDate.parse(walk.walkDate)
                     val existing = walkDao.getWalkByDate(date)
                     val minutes  = if (walk.minutes > 0) walk.minutes else existing?.minutes ?: 0L
+
                     walkDao.upsertWalk(WalkEntity(date, walk.isWalked, walk.distanceKm, minutes, isManual = true))
                 }
             }

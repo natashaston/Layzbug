@@ -166,13 +166,21 @@ class MonthViewModel @Inject constructor(
         }
     }
 
-    fun syncAfterSignIn() {
-        viewModelScope.launch {
-            _isUserLoggedIn.value = true
-            walkRepository.syncPendingManualWalks()
-            walkRepository.syncFromSupabase()
-            walkRepository.startSupabaseSync()
-        }
+    /**
+     * Called immediately after sign-in, BEFORE syncAfterSignIn.
+     * Pushes the pending manual walk directly to Supabase so that
+     * syncFromSupabase will pull back the correct state instead of
+     * overwriting with stale data.
+     */
+    suspend fun pushManualWalkBeforeSync(date: LocalDate, isWalked: Boolean) {
+        walkRepository.updateManualWalk(date, isWalked)
+    }
+
+    suspend fun syncAfterSignIn() {
+        _isUserLoggedIn.value = true
+        walkRepository.syncPendingManualWalks()
+        walkRepository.syncFromSupabase()
+        walkRepository.startSupabaseSync()
     }
 
     fun launchSignIn(launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>) {

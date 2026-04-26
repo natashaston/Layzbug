@@ -72,10 +72,14 @@ fun MonthDetailScreen(
     viewModel: MonthViewModel = hiltViewModel(),
     onSignInSuccess: () -> Unit = {}
 ) {
-    var showEditSheet     by remember { mutableStateOf(false) }
-    var showSignedInToast by remember { mutableStateOf(false) }
-    var showSyncInfoSheet by remember { mutableStateOf(false) }
-    var selectedDate      by remember { mutableStateOf<LocalDate?>(null) }
+    var showEditSheet       by remember { mutableStateOf(false) }
+    var showSignedInToast   by remember { mutableStateOf(false) }
+    var showSyncInfoSheet   by remember { mutableStateOf(false) }
+    var selectedDate        by remember { mutableStateOf<LocalDate?>(null) }
+    // Captured when sign-in launches from inside the edit sheet
+    // so the manual mark survives sheet close + sign-in flow
+    var pendingDateOnSignIn   by remember { mutableStateOf<LocalDate?>(null) }
+    var pendingStatusOnSignIn by remember { mutableStateOf(false) }
 
     LaunchedEffect(year, month) {
         viewModel.loadMonthData(YearMonth.of(year, month))
@@ -99,10 +103,19 @@ fun MonthDetailScreen(
                         try {
                             val success = viewModel.signInWithGoogle(account)
                             if (success) {
-                                viewModel.syncAfterSignIn()
-                                onSignInSuccess()
-                                showEditSheet = false   // close the bottom sheet
+                                // 1. Close sheet + show toast immediately — don't wait for sync
+                                showEditSheet = false
                                 showSignedInToast = true
+                                onSignInSuccess()
+
+                                // 2. Push pending manual walk to Supabase FIRST
+                                pendingDateOnSignIn?.let { date ->
+                                    viewModel.pushManualWalkBeforeSync(date, pendingStatusOnSignIn)
+                                }
+                                pendingDateOnSignIn = null
+
+                                // 3. Sync — Supabase already has the correct state
+                                viewModel.syncAfterSignIn()
                             }
                         } catch (e: Exception) {
                             Log.e("MonthDetailScreen", "Sign-in error: ${e.message}")
@@ -205,7 +218,12 @@ fun MonthDetailScreen(
                 onNotWalked = { },
                 onManualOverrideChanged = { override -> pendingOverride = override },
                 isLoggedIn = isUserLoggedIn,
-                onSignInClick = { viewModel.launchSignIn(signInLauncher) }
+                onSignInClick = {
+                    // Capture what the user was trying to mark before sign-in
+                    pendingDateOnSignIn   = selectedDate
+                    pendingStatusOnSignIn = pendingOverride
+                    viewModel.launchSignIn(signInLauncher)
+                }
             )
         }
     }
@@ -312,7 +330,7 @@ private fun SyncedInfoSheet(onClose: () -> Unit) {
                 modifier = Modifier
                     .height(28.dp)
                     .background(GoalGreenText, CircleShape)
-                    .border(0.dp, GoalGreenBorder, CircleShape)
+                    .border(1.dp, GoalGreenBorder, CircleShape)
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
