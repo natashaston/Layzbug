@@ -1,7 +1,11 @@
 package com.layzbug.app.ui.screens
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +27,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -32,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.Canvas
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
@@ -41,10 +48,7 @@ import com.layzbug.app.R
 
 // ─── FONTS ──────────────────────────────────────────────────────────
 
-private val JetBrainsMono = FontFamily(
-    Font(R.font.jetbrains_mono_regular, FontWeight.Normal)
-)
-
+private val JetBrainsMono = FontFamily(Font(R.font.jetbrains_mono_regular, FontWeight.Normal))
 private val VictorMono = FontFamily(
     Font(R.font.victor_mono_regular, FontWeight.Normal),
     Font(R.font.victor_mono_medium, FontWeight.Medium),
@@ -60,7 +64,6 @@ private val RamsGridLine  = Color.Gray.copy(alpha = 0.03f)
 private val RamsChipBg    = Color.White.copy(alpha = 0.03f)
 private val OrangeAccent  = Color(0xFFFF4400)
 private val GreenAccent   = Color(0xFF00FF66)
-private val RedAccent     = Color(0xFFEF4444)
 
 // ─── MAIN SCREEN ────────────────────────────────────────────────────
 
@@ -69,37 +72,79 @@ fun OnboardingScreen(
     onComplete: () -> Unit,
     viewOnly: Boolean = false
 ) {
+    val context = LocalContext.current
     var currentPage by remember { mutableIntStateOf(0) }
-    // In viewOnly mode show pages 0-4 only (skip the permissions page)
     val totalPages = if (viewOnly) 5 else 6
 
-    val permissions = setOf(
+    val healthPermissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class),
         HealthPermission.getReadPermission(DistanceRecord::class),
         HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
     )
 
-    // Step 2: Health Connect permissions → onComplete
-    val requestPermissionLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionResultContract()
-    ) { grantedPermissions ->
-        Log.d("Onboarding", "Health Connect granted: $grantedPermissions")
+    // Track grant states to reflect in UI toggles on PagePermissions
+    var notifGranted by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            else true
+        )
+    }
+    var healthGranted by remember { mutableStateOf(false) }
+    var batteryGranted by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                (context.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager)
+                    .isIgnoringBatteryOptimizations(context.packageName)
+            else true
+        )
+    }
+
+    // Step 3: Battery optimisation — fire intent, then complete
+    val requestBatteryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        // Re-check grant state
+        batteryGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            (context.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager)
+                .isIgnoringBatteryOptimizations(context.packageName)
+        else true
         onComplete()
     }
 
-    // Step 1: Notification permission (Android 13+) → then launch Health Connect
-    val requestNotificationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        // Proceed whether granted or denied
-        requestPermissionLauncher.launch(permissions)
+    // Step 2: Health Connect → then battery
+    val requestHealthLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        Log.d("Onboarding", "Health Connect granted: $granted")
+        healthGranted = granted.isNotEmpty()
+        // Launch battery optimisation next
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                }
+                requestBatteryLauncher.launch(intent)
+            } else {
+                batteryGranted = true
+                onComplete()
+            }
+        } else {
+            onComplete()
+        }
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color.White
-    ) {
+    // Step 1: Notifications → then Health Connect
+    val requestNotifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notifGranted = granted
+        requestHealthLauncher.launch(healthPermissions)
+    }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = Color.White) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -108,42 +153,29 @@ fun OnboardingScreen(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             // Page indicators
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 repeat(totalPages) { index ->
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 4.dp)
-                            .size(
-                                width = if (index == currentPage) 24.dp else 6.dp,
-                                height = 6.dp
-                            )
+                            .size(width = if (index == currentPage) 24.dp else 6.dp, height = 6.dp)
                             .clip(if (index == currentPage) RoundedCornerShape(3.dp) else CircleShape)
-                            .background(
-                                if (index == currentPage) OrangeAccent
-                                else Color.Black.copy(alpha = 0.1f)
-                            )
+                            .background(if (index == currentPage) OrangeAccent else Color.Black.copy(alpha = 0.1f))
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Content
             AnimatedContent(
                 targetState = currentPage,
                 modifier = Modifier.weight(1f),
                 transitionSpec = {
                     val gap = 0.15f
-                    if (targetState > initialState) {
-                        slideInHorizontally { (it * (1 + gap)).toInt() } togetherWith
-                                slideOutHorizontally { -(it * (1 + gap)).toInt() }
-                    } else {
-                        slideInHorizontally { -(it * (1 + gap)).toInt() } togetherWith
-                                slideOutHorizontally { (it * (1 + gap)).toInt() }
-                    }
+                    if (targetState > initialState)
+                        slideInHorizontally { (it * (1 + gap)).toInt() } togetherWith slideOutHorizontally { -(it * (1 + gap)).toInt() }
+                    else
+                        slideInHorizontally { -(it * (1 + gap)).toInt() } togetherWith slideOutHorizontally { (it * (1 + gap)).toInt() }
                 },
                 label = "onboarding"
             ) { page ->
@@ -173,17 +205,9 @@ fun OnboardingScreen(
                             brush = androidx.compose.ui.graphics.SolidColor(Color.Black.copy(alpha = 0.1f))
                         ),
                         contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.Black.copy(alpha = 0.4f)
-                        )
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black.copy(alpha = 0.4f))
                     ) {
-                        Text(
-                            text = "BACK",
-                            fontSize = 12.sp,
-                            fontFamily = VictorMono,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
+                        Text(text = "BACK", fontSize = 12.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))
@@ -196,10 +220,13 @@ fun OnboardingScreen(
                         } else {
                             if (viewOnly) {
                                 onComplete()
-                            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                requestNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             } else {
-                                requestPermissionLauncher.launch(permissions)
+                                // Fire permission chain: notif → health → battery → onComplete
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    requestNotifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    requestHealthLauncher.launch(healthPermissions)
+                                }
                             }
                         }
                     },
@@ -210,15 +237,26 @@ fun OnboardingScreen(
                     val lastLabel = if (viewOnly) "CLOSE" else "GET STARTED"
                     Text(
                         text = if (currentPage < totalPages - 1) "NEXT" else lastLabel,
-                        color = OrangeAccent,
-                        fontSize = 13.sp,
-                        fontFamily = JetBrainsMono,
-                        fontWeight = FontWeight.Bold,
+                        color = OrangeAccent, fontSize = 13.sp,
+                        fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold,
                         letterSpacing = 1.3.sp
                     )
                 }
             }
         }
+    }
+}
+
+// ─── PAGE 6: PERMISSIONS ────────────────────────────────────────────
+
+@Composable
+private fun PagePermissions() {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = "Almost there", fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VictorMono, textAlign = TextAlign.Center)
+        Spacer(modifier = Modifier.height(32.dp))
+        Text(text = "PERMISSIONS", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
+        Spacer(modifier = Modifier.height(32.dp))
+        Text(text = "Grant access to send you notifications, read your steps and walking data from Google Fit.", modifier = Modifier.padding(horizontal = 24.dp), textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(0.6f))
     }
 }
 
@@ -228,33 +266,14 @@ fun OnboardingScreen(
 private fun PageHook() {
     val infiniteTransition = rememberInfiniteTransition(label = "floating")
     val floatingOffset by infiniteTransition.animateFloat(
-        initialValue = -12f,
-        targetValue = 12f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = LinearOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "offset"
+        initialValue = -12f, targetValue = 12f,
+        animationSpec = infiniteRepeatable(animation = tween(2500, easing = LinearOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+        label = "offset"
     )
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Image(
-            painter = painterResource(id = R.drawable.ic_layzbug),
-            contentDescription = null,
-            modifier = Modifier.size(140.dp).offset(y = floatingOffset.dp)
-        )
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painter = painterResource(id = R.drawable.ic_layzbug), contentDescription = null, modifier = Modifier.size(140.dp).offset(y = floatingOffset.dp))
         Spacer(modifier = Modifier.height(64.dp))
-        Text(
-            text = "Science says 30 minutes of intentional walking changes everything.\n\nLayzbug helps you prove it.",
-            textAlign = TextAlign.Center,
-            fontFamily = VictorMono,
-            fontSize = 18.sp,
-            lineHeight = 28.sp,
-            color = Color.Black.copy(alpha = 0.7f)
-        )
+        Text(text = "Science says 30 minutes of intentional walking changes everything.\n\nLayzbug helps you prove it.", textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 18.sp, lineHeight = 28.sp, color = Color.Black.copy(alpha = 0.7f))
     }
 }
 
@@ -262,54 +281,23 @@ private fun PageHook() {
 
 @Composable
 private fun PageGoal() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "Your Daily Objective",
-            fontWeight = FontWeight.Bold,
-            fontSize = 20.sp,
-            fontFamily = VictorMono,
-            color = Color.Black.copy(alpha = 0.8f)
-        )
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text(text = "Your Daily Objective", fontWeight = FontWeight.Bold, fontSize = 20.sp, fontFamily = VictorMono, color = Color.Black.copy(alpha = 0.8f))
         Spacer(modifier = Modifier.height(40.dp))
         Box(
-            modifier = Modifier
-                .size(280.dp)
-                .clip(CircleShape)
-                .background(RamsSurface)
-                .border(1.dp, RamsBorder, CircleShape)
+            modifier = Modifier.size(280.dp).clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape)
                 .drawBehind {
                     val gridSize = 4.dp.toPx()
-                    for (x in 0..size.width.toInt() step gridSize.toInt()) {
-                        drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
-                    }
-                    for (y in 0..size.height.toInt() step gridSize.toInt()) {
-                        drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
-                    }
+                    for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
+                    for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
                 },
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "30",
-                    color = OrangeAccent,
-                    fontSize = 100.sp,
-                    fontFamily = JetBrainsMono,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = (-4).sp,
-                    style = androidx.compose.ui.text.TextStyle(
-                        shadow = androidx.compose.ui.graphics.Shadow(
-                            color = OrangeAccent.copy(alpha = 0.5f),
-                            offset = Offset.Zero,
-                            blurRadius = 50f
-                        )
-                    )
-                )
+                Text(text = "30", color = OrangeAccent, fontSize = 100.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Medium, letterSpacing = (-4).sp,
+                    style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(color = OrangeAccent.copy(alpha = 0.5f), offset = Offset.Zero, blurRadius = 50f)))
                 Text(text = "MINUTES OF", color = Color.White, fontSize = 14.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center)
-                Text(text = "WALKING",    color = Color.White, fontSize = 14.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center)
+                Text(text = "WALKING", color = Color.White, fontSize = 14.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center)
             }
         }
         Spacer(modifier = Modifier.height(40.dp))
@@ -322,66 +310,45 @@ private fun PageGoal() {
 @Composable
 private fun PageSmartDetection() {
     data class RainChip(val text: String, val isValid: Boolean, val column: Int, val duration: Int, val delay: Int)
-
     val chips = remember {
         listOf(
-            RainChip("5 MINS", true, 0, 4000, 0),    RainChip("3 MINS", false, 1, 4500, 600),
-            RainChip("8 MINS", true, 2, 3800, 300),   RainChip("2 MINS", false, 3, 4200, 900),
+            RainChip("5 MINS", true, 0, 4000, 0), RainChip("3 MINS", false, 1, 4500, 600),
+            RainChip("8 MINS", true, 2, 3800, 300), RainChip("2 MINS", false, 3, 4200, 900),
             RainChip("12 MINS", true, 1, 4300, 1500), RainChip("4 MINS", false, 0, 3900, 1200),
-            RainChip("6 MINS", true, 3, 4400, 2000),  RainChip("1 MIN", false, 2, 4100, 1800),
+            RainChip("6 MINS", true, 3, 4400, 2000), RainChip("1 MIN", false, 2, 4100, 1800),
             RainChip("15 MINS", true, 0, 4200, 2500), RainChip("7 MINS", true, 2, 4000, 2800),
             RainChip("4 MINS", false, 1, 4300, 3200), RainChip("10 MINS", true, 3, 3900, 3500),
         )
     }
-
     val infiniteTransition = rememberInfiniteTransition(label = "rain")
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text("Not all minutes count", fontWeight = FontWeight.Bold, fontSize = 20.sp, fontFamily = VictorMono, color = Color.Black.copy(0.8f))
         Spacer(modifier = Modifier.height(32.dp))
         Text(" WALKS UNDER 5 MINUTES ARE FILTERED OUT", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
         Spacer(modifier = Modifier.height(40.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.85f).aspectRatio(1f)
-                .clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape)
-                .drawBehind {
-                    val gridSize = 4.dp.toPx()
-                    for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
-                    for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
-                }
-        ) {
+        Box(modifier = Modifier.fillMaxWidth(0.85f).aspectRatio(1f).clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape)
+            .drawBehind {
+                val gridSize = 4.dp.toPx()
+                for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
+                for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
+            }) {
             chips.forEach { chip ->
-                val fallY by infiniteTransition.animateFloat(
-                    initialValue = -100f, targetValue = 460f,
-                    animationSpec = infiniteRepeatable(animation = tween(chip.duration, chip.delay, LinearEasing), repeatMode = RepeatMode.Restart),
-                    label = "fall"
-                )
+                val fallY by infiniteTransition.animateFloat(initialValue = -100f, targetValue = 460f,
+                    animationSpec = infiniteRepeatable(animation = tween(chip.duration, chip.delay, LinearEasing), repeatMode = RepeatMode.Restart), label = "fall")
                 val xFraction = when (chip.column) { 0 -> 0.15f; 1 -> 0.40f; 2 -> 0.65f; 3 -> 0.85f; else -> 0.5f }
                 val killStart = 100f; val killEnd = 200f
                 val killProgress = if (!chip.isValid && fallY > killStart) ((fallY - killStart) / (killEnd - killStart)).coerceIn(0f, 1f) else 0f
                 val isExploding = !chip.isValid && killProgress in 0.01f..0.99f
                 val isDead = !chip.isValid && killProgress >= 0.99f
                 val chipAlpha = when { chip.isValid -> 1f; killProgress < 0.1f -> 1f; else -> 0f }
-
                 if (!isDead) {
                     Box(modifier = Modifier.fillMaxWidth().offset(y = fallY.dp)) {
-                        Box(modifier = Modifier.align(BiasAlignment(xFraction * 2 - 1, 0f)).graphicsLayer { alpha = chipAlpha }) {
-                            RainChipPill(text = chip.text, isValid = chip.isValid)
-                        }
+                        Box(modifier = Modifier.align(BiasAlignment(xFraction * 2 - 1, 0f)).graphicsLayer { alpha = chipAlpha }) { RainChipPill(text = chip.text, isValid = chip.isValid) }
                     }
                 }
-                if (isExploding) {
-                    ExplosionParticles(chipKey = "${chip.text}_${chip.column}_${chip.delay}", xFraction = xFraction, yOffset = fallY, progress = killProgress)
-                }
+                if (isExploding) ExplosionParticles(chipKey = "${chip.text}_${chip.column}_${chip.delay}", xFraction = xFraction, yOffset = fallY, progress = killProgress)
             }
         }
-
         Spacer(modifier = Modifier.height(40.dp))
         Text("Only intentional walks count.\nShorter walks to bathroom,\nkitchen, and in between rooms,\nare filtered out.", textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(0.6f))
     }
@@ -398,11 +365,7 @@ private fun RainChipPill(text: String, isValid: Boolean) {
 private fun BoxScope.ExplosionParticles(chipKey: String, xFraction: Float, yOffset: Float, progress: Float) {
     val particles = remember(chipKey) {
         val random = kotlin.random.Random(chipKey.hashCode())
-        List(50) {
-            ParticleData(angle = random.nextFloat() * 2f * Math.PI.toFloat(), speed = 20f + random.nextFloat() * 60f,
-                size = 0.4f + random.nextFloat() * 1.1f, gravity = 30f + random.nextFloat() * 40f,
-                lifeDecay = 0.7f + random.nextFloat() * 0.3f, colorMix = random.nextFloat())
-        }
+        List(50) { ParticleData(angle = random.nextFloat() * 2f * Math.PI.toFloat(), speed = 20f + random.nextFloat() * 60f, size = 0.4f + random.nextFloat() * 1.1f, gravity = 30f + random.nextFloat() * 40f, lifeDecay = 0.7f + random.nextFloat() * 0.3f, colorMix = random.nextFloat()) }
     }
     Box(modifier = Modifier.fillMaxWidth().offset(y = (yOffset - 90f).dp)) {
         Box(modifier = Modifier.align(BiasAlignment(xFraction * 2 - 1, 0f))) {
@@ -415,8 +378,7 @@ private fun BoxScope.ExplosionParticles(chipKey: String, xFraction: Float, yOffs
                     val alpha = (1f - (t / p.lifeDecay).coerceAtMost(1f)).coerceAtLeast(0f)
                     if (alpha <= 0f) return@forEach
                     val color = androidx.compose.ui.graphics.lerp(OrangeAccent, Color(0xFFFFAA00), p.colorMix).copy(alpha = alpha)
-                    val radius = (p.size * (1f - t * 0.3f)) * density
-                    drawCircle(color = color, radius = radius.coerceAtLeast(0.5f), center = Offset(px, py))
+                    drawCircle(color = color, radius = (p.size * (1f - t * 0.3f)) * density.coerceAtLeast(0.5f), center = Offset(px, py))
                 }
             }
         }
@@ -429,11 +391,7 @@ private data class ParticleData(val angle: Float, val speed: Float, val size: Fl
 
 @Composable
 private fun PageHowItWorks() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = "Zero manual tracking", fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VictorMono, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(32.dp))
         Text(text = "WE SYNC WITH GOOGLE FIT\nIN THE BACKGROUND", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
@@ -454,7 +412,6 @@ private fun OrbitingOrb(modifier: Modifier = Modifier) {
     }
     val infiniteTransition = rememberInfiniteTransition(label = "orbit")
     val globalRotation by infiniteTransition.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(animation = tween(8000, easing = LinearEasing), repeatMode = RepeatMode.Restart), label = "rotation")
-
     Box(modifier = modifier.clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val centerX = size.width / 2; val centerY = size.height / 2
@@ -505,31 +462,16 @@ private fun PageNotification() {
     }
 }
 
-// ─── PAGE 6: PERMISSIONS ────────────────────────────────────────────
-
-@Composable
-private fun PagePermissions() {
-    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = "Almost there", fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VictorMono, textAlign = TextAlign.Center)
-        Spacer(modifier = Modifier.height(32.dp))
-        Text(text = "PERMISSIONS", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
-        Spacer(modifier = Modifier.height(32.dp))
-        Text(text = "Grant access to send you notifications, read your steps and walking data from Google Fit.", modifier = Modifier.padding(horizontal = 24.dp), textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(0.6f))
-    }
-}
-
 // ─── SHARED COMPONENTS ──────────────────────────────────────────────
 
 @Composable
 private fun RamsCard(content: @Composable () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(RamsSurface).border(1.dp, RamsBorder, RoundedCornerShape(24.dp))
-            .drawBehind {
-                val gridSize = 4.dp.toPx()
-                for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
-                for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
-            }
-    ) { content() }
+    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(RamsSurface).border(1.dp, RamsBorder, RoundedCornerShape(24.dp))
+        .drawBehind {
+            val gridSize = 4.dp.toPx()
+            for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
+            for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
+        }) { content() }
 }
 
 @Composable
