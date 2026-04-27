@@ -17,6 +17,9 @@
     <!-- Allows WorkManager to reschedule on device reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Battery optimisation exemption — needed for reliable background workers -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:name=".LayzbugApp"
         android:allowBackup="true"

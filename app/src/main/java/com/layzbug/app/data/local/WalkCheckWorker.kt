@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
+import androidx.work.OneTimeWorkRequestBuilder
 import com.layzbug.app.data.repository.WalkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject

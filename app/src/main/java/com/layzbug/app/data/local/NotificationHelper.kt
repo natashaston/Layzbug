@@ -1,12 +1,17 @@
 package com.layzbug.app.notifications
 
+import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.layzbug.app.R
 import com.layzbug.app.MainActivity
 
@@ -63,6 +68,18 @@ object NotificationHelper {
             .addAction(0, "Ok", dismissIntent)
             .build()
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        // Check permission explicitly on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) {
+                NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+                Log.d("NotificationHelper", "✅ Notification posted")
+            } else {
+                Log.e("NotificationHelper", "❌ POST_NOTIFICATIONS permission not granted")
+            }
+        } else {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            Log.d("NotificationHelper", "✅ Notification posted (pre-13)")
+        }
     }
 }
