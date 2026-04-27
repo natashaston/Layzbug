@@ -114,8 +114,9 @@ fun LayzbugNavHost(
     val scope = rememberCoroutineScope()
 
     // Notification prefs
-    val notifEnabled by notificationPrefs.isEnabled.collectAsState(initial = true)
+    val notifEnabled  by notificationPrefs.isEnabled.collectAsState(initial = true)
     val notifHour    by notificationPrefs.notifHour.collectAsState(initial = 18)
+    val notifMinute  by notificationPrefs.notifMinute.collectAsState(initial = 0)
     var showTimePicker   by remember { mutableStateOf(false) }
     var showHowItWorks   by remember { mutableStateOf(false) }
     var showSyncInfoSheet          by remember { mutableStateOf(false) }
@@ -279,7 +280,7 @@ fun LayzbugNavHost(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "%02d:00".format(notifHour),
+                                        text = "%02d:%02d".format(notifHour, notifMinute),
                                         color = OrangeAccent,
                                         fontSize = 14.sp,
                                         fontFamily = JetBrainsMono,
@@ -584,9 +585,9 @@ fun LayzbugNavHost(
     // ── Hour picker dialog ───────────────────────────────────────────
     if (showTimePicker) {
         HourPickerDialog(
-            currentHour = notifHour,
-            onConfirm = { hour ->
-                scope.launch { notificationPrefs.setHour(hour) }
+            currentHour = notifHour * 60 + notifMinute,
+            onConfirm = { totalMinutes ->
+                scope.launch { notificationPrefs.setHourAndMinute(totalMinutes / 60, totalMinutes % 60) }
                 showTimePicker = false
             },
             onDismiss = { showTimePicker = false }
@@ -662,9 +663,11 @@ private fun DrawerSyncInfoSheet(onClose: () -> Unit, onSignInClick: () -> Unit) 
 
 // ─── HOUR PICKER DIALOG ──────────────────────────────────────────────
 
+// onConfirm receives total minutes (e.g. 1110 = 18:30)
 @Composable
 private fun HourPickerDialog(currentHour: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
-    var selectedHour by remember { mutableIntStateOf(currentHour) }
+    // currentHour is already total minutes (passed as notifHour * 60 + notifMinute)
+    var selectedMinutes by remember { mutableIntStateOf(currentHour.coerceIn(360, 1320)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -685,7 +688,7 @@ private fun HourPickerDialog(currentHour: Int, onConfirm: (Int) -> Unit, onDismi
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "%02d:00".format(selectedHour),
+                        text = "%02d:%02d".format(selectedMinutes / 60, selectedMinutes % 60),
                         fontFamily = JetBrainsMono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 44.sp,
@@ -701,10 +704,10 @@ private fun HourPickerDialog(currentHour: Int, onConfirm: (Int) -> Unit, onDismi
                     color = BodyTextMuted
                 )
                 Slider(
-                    value = selectedHour.toFloat(),
-                    onValueChange = { selectedHour = it.toInt() },
-                    valueRange = 6f..22f,
-                    steps = 15,
+                    value = selectedMinutes.toFloat(),
+                    onValueChange = { selectedMinutes = (it / 15).toInt() * 15 },
+                    valueRange = 360f..1320f,
+                    steps = 63,
                     colors = SliderDefaults.colors(
                         thumbColor             = OrangeAccent,
                         activeTrackColor       = OrangeAccent,
@@ -725,7 +728,7 @@ private fun HourPickerDialog(currentHour: Int, onConfirm: (Int) -> Unit, onDismi
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(RamsSurface)
-                    .clickable { onConfirm(selectedHour) }
+                    .clickable { onConfirm(selectedMinutes) }
                     .padding(horizontal = 28.dp, vertical = 14.dp),
                 contentAlignment = Alignment.Center
             ) {

@@ -3,8 +3,8 @@ package com.layzbug.app
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.layzbug.app.notifications.AlarmScheduler
 import com.layzbug.app.notifications.NotificationHelper
-import com.layzbug.app.notifications.WalkCheckWorker
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -22,6 +22,8 @@ class LayzbugApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         NotificationHelper.createChannel(this)
-        WalkCheckWorker.schedule(this, hourOfDay = 18)
+        // Schedule daily alarm at 18:00 — AlarmScheduler uses KEEP logic
+        // (only schedules if not already pending)
+        AlarmScheduler.schedule(this, hourOfDay = 18)
     }
 }
