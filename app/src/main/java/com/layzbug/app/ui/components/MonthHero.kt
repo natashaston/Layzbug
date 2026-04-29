@@ -7,6 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,7 +51,8 @@ fun MonthHero(
     stats: StatsValue,
     isCurrentMonth: Boolean = true,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onShareClick: (() -> Unit)? = null // Made nullable to hide button completely if not provided
 ) {
     Box(
         modifier = modifier
@@ -72,12 +76,13 @@ fun MonthHero(
             modifier = Modifier.heightIn(min = 140.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header: pill-shaped status chip with month name
+            // Header: pill-shaped status chip and chip-styled share button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Month Chip
                 Row(
                     modifier = Modifier
                         .height(28.dp)
@@ -95,6 +100,38 @@ fun MonthHero(
                         fontFamily = VictorMono,
                         letterSpacing = 1.1.sp
                     )
+                }
+
+                // Share Button — rendered as a matching chip if lambda provided
+                if (onShareClick != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .height(28.dp)
+                            .clip(CircleShape)
+                            .background(RamsChipBg)
+                            .border(1.dp, RamsBorder, CircleShape)
+                            .clickable { onShareClick() }
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "SHARE",
+                            color = MonthAccent,
+                            fontSize = 11.sp,
+                            fontFamily = VictorMono,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.1.sp
+                        )
+                        Icon(
+                            imageVector = Icons.Outlined.Share,
+                            contentDescription = "Share month stats",
+                            tint = MonthAccent,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
             }
 

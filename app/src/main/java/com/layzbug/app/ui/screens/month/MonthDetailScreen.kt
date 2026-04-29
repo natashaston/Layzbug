@@ -1,6 +1,7 @@
 package com.layzbug.app.ui.screens.month
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,8 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +45,8 @@ import com.layzbug.app.ui.components.CalendarGrid
 import com.layzbug.app.ui.components.EditWalkStatusContent
 import com.layzbug.app.ui.components.LayzbugBottomSheet
 import com.layzbug.app.ui.components.MonthHero
+import com.layzbug.app.ui.components.SharePreviewBottomSheet
+import com.layzbug.app.ui.components.WalkShareUtils
 import com.layzbug.app.ui.theme.Dimens
 import com.layzbug.app.ui.theme.SurfaceColor
 import com.layzbug.app.data.viewmodel.MonthViewModel
@@ -72,12 +74,18 @@ fun MonthDetailScreen(
     viewModel: MonthViewModel = hiltViewModel(),
     onSignInSuccess: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var showEditSheet       by remember { mutableStateOf(false) }
     var showSignedInToast   by remember { mutableStateOf(false) }
     var showSyncInfoSheet   by remember { mutableStateOf(false) }
+
+    // Share Sheet State
+    var showSharePreview    by remember { mutableStateOf(false) }
+    var shareBitmap         by remember { mutableStateOf<Bitmap?>(null) }
+
     var selectedDate        by remember { mutableStateOf<LocalDate?>(null) }
-    // Captured when sign-in launches from inside the edit sheet
-    // so the manual mark survives sheet close + sign-in flow
     var pendingDateOnSignIn   by remember { mutableStateOf<LocalDate?>(null) }
     var pendingStatusOnSignIn by remember { mutableStateOf(false) }
 
@@ -88,8 +96,6 @@ fun MonthDetailScreen(
     val walkDays       by viewModel.walkDays.collectAsState()
     val rawMonthStats  by viewModel.monthStats.collectAsState()
     val isUserLoggedIn by viewModel.isUserLoggedIn.collectAsState()
-
-    val scope = rememberCoroutineScope()
 
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -103,18 +109,14 @@ fun MonthDetailScreen(
                         try {
                             val success = viewModel.signInWithGoogle(account)
                             if (success) {
-                                // 1. Close sheet + show toast immediately — don't wait for sync
                                 showEditSheet = false
                                 showSignedInToast = true
                                 onSignInSuccess()
 
-                                // 2. Push pending manual walk to Supabase FIRST
                                 pendingDateOnSignIn?.let { date ->
                                     viewModel.pushManualWalkBeforeSync(date, pendingStatusOnSignIn)
                                 }
                                 pendingDateOnSignIn = null
-
-                                // 3. Sync — Supabase already has the correct state
                                 viewModel.syncAfterSignIn()
                             }
                         } catch (e: Exception) {
@@ -128,13 +130,33 @@ fun MonthDetailScreen(
         }
     }
 
+    // Share Preview Sheet
+    val bmp = shareBitmap
+    if (showSharePreview && bmp != null) {
+        val daysWalkedStr = rawMonthStats.value.toString()
+        val daysWalked = daysWalkedStr.toIntOrNull() ?: 0
+        SharePreviewBottomSheet(
+            bitmap    = bmp,
+            cardData  = WalkShareUtils.monthlyCardData(
+                year = year,
+                monthNumber = month,
+                daysWalked = daysWalked,
+                distanceKm = rawMonthStats.distanceKm,
+                totalMins = rawMonthStats.totalMinutes
+            ),
+            onDismiss = {
+                showSharePreview = false
+                shareBitmap = null
+            }
+        )
+    }
+
     Scaffold(containerColor = SurfaceColor) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = 16.dp, end = 16.dp, bottom = paddingValues.calculateBottomPadding())
         ) {
-            // ── Signed-in toast — pushes all content down ────────────
             AnimatedVisibility(
                 visible = showSignedInToast,
                 enter = expandVertically(tween(300)) + fadeIn(),
@@ -152,7 +174,22 @@ fun MonthDetailScreen(
             MonthHero(
                 stats = rawMonthStats,
                 isCurrentMonth = year == YearMonth.now().year && month == YearMonth.now().monthValue,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                onShareClick = {
+                    scope.launch {
+                        val daysWalkedStr = rawMonthStats.value.toString()
+                        val daysWalked = daysWalkedStr.toIntOrNull() ?: 0
+                        val cardData = WalkShareUtils.monthlyCardData(
+                            year = year,
+                            monthNumber = month,
+                            daysWalked = daysWalked,
+                            distanceKm = rawMonthStats.distanceKm,
+                            totalMins = rawMonthStats.totalMinutes
+                        )
+                        shareBitmap = WalkShareUtils.renderCardBitmap(context, cardData)
+                        showSharePreview = true
+                    }
+                }
             )
 
             Spacer(modifier = Modifier.height(Dimens.spaceBase))
@@ -188,12 +225,10 @@ fun MonthDetailScreen(
         }
     }
 
-    // ── Sync info sheet ──────────────────────────────────────────────
     if (showSyncInfoSheet) {
         SyncedInfoSheet(onClose = { showSyncInfoSheet = false })
     }
 
-    // ── Edit walk status sheet ───────────────────────────────────────
     if (showEditSheet && selectedDate != null) {
         val walkDay = walkDays.find { it.date == selectedDate }
         var pendingOverride by remember(selectedDate) { mutableStateOf(walkDay?.walked ?: false) }
@@ -219,7 +254,6 @@ fun MonthDetailScreen(
                 onManualOverrideChanged = { override -> pendingOverride = override },
                 isLoggedIn = isUserLoggedIn,
                 onSignInClick = {
-                    // Capture what the user was trying to mark before sign-in
                     pendingDateOnSignIn   = selectedDate
                     pendingStatusOnSignIn = pendingOverride
                     viewModel.launchSignIn(signInLauncher)
@@ -252,7 +286,6 @@ private fun MonthSignedInToast(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Close icon — left
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -269,7 +302,6 @@ private fun MonthSignedInToast(
                 )
             }
 
-            // Text — centre
             Text(
                 text = "Logged in.",
                 color = Color.White,
@@ -285,7 +317,6 @@ private fun MonthSignedInToast(
                     .wrapContentHeight(Alignment.CenterVertically)
             )
 
-            // Info icon — right
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -308,7 +339,6 @@ private fun MonthSignedInToast(
 }
 
 // ─── SYNCED INFO SHEET ───────────────────────────────────────────────
-// Shown when user taps the info icon on the signed-in toast
 
 @Composable
 private fun SyncedInfoSheet(onClose: () -> Unit) {
@@ -325,7 +355,6 @@ private fun SyncedInfoSheet(onClose: () -> Unit) {
                 .padding(horizontal = 24.dp)
                 .padding(top = 20.dp, bottom = 40.dp)
         ) {
-            // ── Green chip — CLOUD SYNC IS ON ────────────────────────
             Row(
                 modifier = Modifier
                     .height(28.dp)
@@ -352,7 +381,6 @@ private fun SyncedInfoSheet(onClose: () -> Unit) {
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // ── Headline ─────────────────────────────────────────────
             Text(
                 text = "Your walks are saved",
                 color = headlineColor,
@@ -365,7 +393,6 @@ private fun SyncedInfoSheet(onClose: () -> Unit) {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // ── Description ──────────────────────────────────────────
             Text(
                 text = "Your walks are now synced across all your devices. Whenever you log in to a new device using the same Google account, all your data will be fetched automatically.",
                 color = bodyTextMuted,
@@ -388,8 +415,6 @@ private fun SyncedInfoSheet(onClose: () -> Unit) {
         }
     }
 }
-
-// ─── GOOGLE G LOGO ───────────────────────────────────────────────────
 
 @Composable
 private fun GoogleGLogoMonth(modifier: Modifier = Modifier) {

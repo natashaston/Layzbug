@@ -81,12 +81,10 @@ fun HomeScreen(
     val isSyncing         by viewModel.isSyncing.collectAsState()
     val syncCompleted     by viewModel.syncCompleted.collectAsState()
 
-    // Banner: show login card when not logged in, success toast when just logged in
     var showSyncInfoSheet      by remember { mutableStateOf(false) }
     var showSuccessToast       by remember { mutableStateOf(false) }
     var showSignedInInfoSheet  by remember { mutableStateOf(false) }
     var showSyncInfoPopup      by remember { mutableStateOf(false) }
-    // syncToastDismissed lives in ViewModel so it survives navigation
     val syncToastDismissed     by viewModel.syncToastDismissed.collectAsState()
 
     val signInLauncher = rememberLauncherForActivityResult(
@@ -102,7 +100,7 @@ fun HomeScreen(
                         authManager.signInWithGoogle(account)
                         viewModel.onUserSignedIn()
                         onSignInSuccess()
-                        showSuccessToast = true  // only show toast when signing in from home
+                        showSuccessToast = true
                     }
                 } catch (e: ApiException) { /* handle */ }
             }
@@ -120,7 +118,6 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // ── Sync toast — shows during and after first sync ──────
                 AnimatedVisibility(
                     visible = (isSyncing || syncCompleted) && !syncToastDismissed,
                     enter = expandVertically(tween(300)) + fadeIn(),
@@ -133,9 +130,6 @@ fun HomeScreen(
                     )
                 }
 
-                // ── Auth card — always present, colours animate in place ─
-                // When logged in + showSuccessToast, it glows green then fades
-                // out as a unit. No layout shift ever occurs.
                 AnimatedVisibility(
                     visible = !isLoggedIn || showSuccessToast,
                     enter = expandVertically(tween(300)) + fadeIn(),
@@ -151,6 +145,7 @@ fun HomeScreen(
                     }
                 }
 
+                // Share logic is intentionally omitted here to hide the icons
                 YearlyStatsWithDropdown(
                     totalWalks      = yearlyWalks.value,
                     totalDistanceKm = yearlyWalks.distanceKm,
@@ -161,6 +156,7 @@ fun HomeScreen(
                     modifier        = Modifier.fillMaxWidth()
                 )
 
+                // Share logic is intentionally omitted here to hide the icons
                 MonthHero(
                     stats    = currentMonthWalks,
                     modifier = Modifier.fillMaxWidth().graphicsLayer(),
@@ -194,8 +190,6 @@ fun HomeScreen(
 }
 
 // ─── SIGNED-IN SUCCESS TOAST ─────────────────────────────────────────
-// Identical dimensions to GoogleSignInCard: RoundedCornerShape(36.dp),
-// padding(16.dp), no fixed height — intrinsic same as the login card.
 
 @Composable
 private fun SignedInToast(
@@ -218,7 +212,6 @@ private fun SignedInToast(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Close — left
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -235,7 +228,6 @@ private fun SignedInToast(
                 )
             }
 
-            // Text — centre
             Text(
                 text = "Logged in.",
                 color = Color.White,
@@ -251,7 +243,6 @@ private fun SignedInToast(
                     .wrapContentHeight(Alignment.CenterVertically)
             )
 
-            // Info — right, solid white circle with green "i"
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -385,8 +376,6 @@ private fun SyncInfoBottomSheet(onClose: () -> Unit, onSignInClick: () -> Unit) 
 }
 
 // ─── SYNC PROGRESS TOAST ─────────────────────────────────────────────
-// Blue while syncing — no close, info icon only.
-// Transitions to green on completion — close appears, info remains.
 
 @Composable
 private fun SyncProgressToast(
@@ -416,7 +405,6 @@ private fun SyncProgressToast(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: close only when sync done
             if (!isSyncing) {
                 Box(
                     modifier = Modifier
@@ -435,7 +423,6 @@ private fun SyncProgressToast(
                 }
             }
 
-            // Text — left-aligned, fills remaining space
             Text(
                 text = statusText,
                 color = Color.White,
@@ -451,7 +438,6 @@ private fun SyncProgressToast(
                     .wrapContentHeight(Alignment.CenterVertically)
             )
 
-            // Right: info icon — always present
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -491,7 +477,6 @@ private fun SyncStatusInfoSheet(
                 .padding(horizontal = 24.dp)
                 .padding(top = 20.dp, bottom = 40.dp)
         ) {
-            // Chip — blue while syncing, green when done
             val chipBg   = if (isSyncing) SyncBlue else Color(0xFF1A6E35)
             val chipText = if (isSyncing) "SYNCING IN PROGRESS" else "SYNC COMPLETE"
             val dotColor = if (isSyncing) Color(0xFF90C8FF) else GreenAccent
@@ -589,7 +574,6 @@ private fun HomeSignedInInfoSheet(onClose: () -> Unit) {
                 .padding(horizontal = 24.dp)
                 .padding(top = 20.dp, bottom = 40.dp)
         ) {
-            // Green chip — CLOUD SYNC IS ON
             Row(
                 modifier = Modifier
                     .height(28.dp)

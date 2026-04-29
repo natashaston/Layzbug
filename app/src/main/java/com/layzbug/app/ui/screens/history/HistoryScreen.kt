@@ -1,9 +1,9 @@
 package com.layzbug.app.ui.screens.history
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.Text
@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -21,9 +22,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.layzbug.app.R
 import com.layzbug.app.ui.components.MonthCard
+import com.layzbug.app.ui.components.SharePreviewBottomSheet
+import com.layzbug.app.ui.components.WalkShareUtils
 import com.layzbug.app.ui.components.YearlyStatsWithDropdown
 import com.layzbug.app.ui.theme.Dimens
 import com.layzbug.app.ui.theme.SurfaceColor
+import kotlinx.coroutines.launch
 
 private val VictorMono = FontFamily(
     Font(R.font.victor_mono_regular, FontWeight.Normal),
@@ -45,8 +49,32 @@ fun HistoryScreen(
     val yearMinutes by viewModel.yearMinutes.collectAsState()
     val availableYears by viewModel.availableYears.collectAsState()
 
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Share Sheet State
+    var showSharePreview by remember { mutableStateOf(false) }
+    var shareBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    // Share Preview Bottom Sheet
+    val bmp = shareBitmap
+    if (showSharePreview && bmp != null) {
+        SharePreviewBottomSheet(
+            bitmap = bmp,
+            cardData = WalkShareUtils.yearlyCardData(
+                year = selectedYear,
+                daysWalked = yearTotal,
+                distanceKm = yearDistanceKm,
+                totalMins = yearMinutes
+            ),
+            onDismiss = {
+                showSharePreview = false
+                shareBitmap = null
+            }
+        )
+    }
+
     LazyVerticalGrid(
-        // Changed from Fixed(2) to Fixed(1)
         columns = GridCells.Fixed(1),
         modifier = Modifier
             .fillMaxSize()
@@ -64,6 +92,18 @@ fun HistoryScreen(
                 selectedYear = selectedYear,
                 availableYears = availableYears,
                 onYearSelected = { year -> viewModel.setSelectedYear(year) },
+                onShareClick = {
+                    scope.launch {
+                        val cardData = WalkShareUtils.yearlyCardData(
+                            year = selectedYear,
+                            daysWalked = yearTotal,
+                            distanceKm = yearDistanceKm,
+                            totalMins = yearMinutes
+                        )
+                        shareBitmap = WalkShareUtils.renderCardBitmap(context, cardData)
+                        showSharePreview = true
+                    }
+                },
                 modifier = Modifier
             )
         }
@@ -83,7 +123,7 @@ fun HistoryScreen(
             Spacer(modifier = Modifier.height(0.dp))
         }
 
-        // 5. Month cards — now 1 per row by default
+        // 5. Month cards
         items(monthsStats) { monthStat ->
             MonthCard(
                 monthName = getFullMonthName(monthStat.monthName),

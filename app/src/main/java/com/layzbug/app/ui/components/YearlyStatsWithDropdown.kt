@@ -11,6 +11,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,12 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.layzbug.app.R
 
-// JetBrains Mono font family — for metric numbers and dropdown
+// JetBrains Mono font family
 private val JetBrainsMono = FontFamily(
     Font(R.font.jetbrains_mono_regular, FontWeight.Normal)
 )
 
-// Victor Mono font family — for labels
+// Victor Mono font family
 private val VictorMono = FontFamily(
     Font(R.font.victor_mono_regular, FontWeight.Normal),
     Font(R.font.victor_mono_medium, FontWeight.Medium),
@@ -61,6 +63,7 @@ fun YearlyStatsWithDropdown(
     onYearSelected: (Int) -> Unit = {},
     showDropdown: Boolean = true,
     onClick: (() -> Unit)? = null,
+    onShareClick: (() -> Unit)? = null, // Made nullable to hide button if not provided (e.g. on HomeScreen)
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -89,32 +92,67 @@ fun YearlyStatsWithDropdown(
             modifier = Modifier.heightIn(min = 140.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header row: status chip + year dropdown
+            // Header row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Pill-shaped status chip
+                // LEFT SIDE: Status chip + Share Icon
                 Row(
-                    modifier = Modifier
-                        .height(28.dp)
-                        .background(RamsChipBg, CircleShape)
-                        .border(1.dp, RamsBorder, CircleShape)
-                        .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "ANNUAL OVERVIEW",
-                        color = RamsTextMuted,
-                        fontSize = 11.sp,
-                        fontFamily = VictorMono,
-                        letterSpacing = 1.1.sp
-                    )
+                    Row(
+                        modifier = Modifier
+                            .height(28.dp)
+                            .background(RamsChipBg, CircleShape)
+                            .border(1.dp, RamsBorder, CircleShape)
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "ANNUAL OVERVIEW",
+                            color = RamsTextMuted,
+                            fontSize = 11.sp,
+                            fontFamily = VictorMono,
+                            letterSpacing = 1.1.sp
+                        )
+                    }
+
+                    // Share Button — Chip style (Orange)
+                    if (onShareClick != null) {
+                        Row(
+                            modifier = Modifier
+                                .height(28.dp)
+                                .clip(CircleShape)
+                                .background(RamsChipBg)
+                                .border(1.dp, RamsBorder, CircleShape)
+                                .clickable { onShareClick() }
+                                .padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "SHARE",
+                                color = RamsAccent,
+                                fontSize = 11.sp,
+                                fontFamily = VictorMono,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.1.sp
+                            )
+                            Icon(
+                                imageVector = Icons.Outlined.Share,
+                                contentDescription = "Share year stats",
+                                tint = RamsAccent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
                 }
 
-                // Year dropdown — only shown when showDropdown is true
+                // RIGHT SIDE: Year dropdown
                 if (showDropdown) {
                     Box {
                         RamsDropdown(
@@ -155,7 +193,7 @@ fun YearlyStatsWithDropdown(
                 }
             }
 
-            // Metrics row — 3 equal columns separated by dividers
+            // Metrics row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom
@@ -283,26 +321,6 @@ private fun RamsDropdown(selectedYear: Int, onClick: () -> Unit) {
             drawPath(path, RamsAccent, alpha = 0.9f, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Square))
         }
     }
-}
-
-@Composable
-private fun StatusPulseDot() {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(1000, easing = LinearEasing),
-            RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-    Box(
-        modifier = Modifier
-            .size(4.dp)
-            .clip(CircleShape)
-            .background(Color(0xFFEF4444).copy(alpha = alpha))
-    )
 }
 
 private fun formatDistanceRams(km: Double): String {
