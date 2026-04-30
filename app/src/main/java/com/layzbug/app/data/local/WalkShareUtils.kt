@@ -21,7 +21,8 @@ data class ShareCardData(
     val col3: ShareMetric,
     val goalBadge: String? = null,
     val fileName: String,
-    val shareText: String = ""
+    val shareText: String = "",
+    val accentColor: Int = Color.parseColor("#FF00FF66") // Default to Green Accent
 )
 
 data class ShareMetric(
@@ -35,24 +36,25 @@ object WalkShareUtils {
 
     // ── CONFIGURABLE SIZES & SPACERS ──────────────────────────────────────────
     private const val SPACER_CHIP_TO_METRICS_DP = 28f  // Gap between Top Chip and Number metrics
-    private const val SPACER_METRIC_TO_LABEL_DP = 4f   // Gap between Number and "DAYS WALKED" label
-    private const val SPACER_LABEL_TO_GOAL_DP   = 24f  // Gap between "DAYS WALKED" label and Green Goal Pill
+    private const val SPACER_METRIC_TO_LABEL_DP = 4f   // Gap between Number and the first label line
+    private const val SPACER_LABEL_LINE_DP      = 2f   // Gap between line 1 and line 2 of the label
+    private const val SPACER_LABEL_TO_GOAL_DP   = 24f  // Gap between the bottom label line and Green Goal Pill
 
     private const val GOAL_PILL_HEIGHT_DP   = 28f
     private const val TOP_CHIP_TEXT_SIZE_DP = 12f  // Text size for the top date chip & branding chip
     private const val GOAL_PILL_TEXT_SIZE_DP= 12f  // Text size for the bottom green pill
-    private const val METRIC_NUM_SIZE_DP    = 30f  // Text size for the main numbers
-    private const val METRIC_LABEL_SIZE_DP  = 11f  // Text size for the "DAYS WALKED" label
+    private const val METRIC_NUM_SIZE_DP    = 26f  // Size for the main numbers
+    private const val METRIC_LABEL_SIZE_DP  = 12f  // Matched to Top Chip Size
 
     private const val CARD_W_DP = 360f
     private const val SCALE     = 3f
-    private const val PAD_DP    = 16f // Matches MonthHero padding(16.dp)
+    private const val PAD_DP    = 16f // Standard padding
+    private const val PAD_BOTTOM_NO_GOAL_DP = 32f // Extra bottom padding when no goal pill is present
 
     // Palette
     private val SURFACE    = Color.parseColor("#FF151619")
     private val BORDER     = Color.argb(13,  255, 255, 255)   // white 5%
     private val GRID_COLOR = Color.argb(8,   255, 255, 255)   // white 3%
-    private val GREEN      = Color.parseColor("#FF00FF66")
     private val TEXT_MUTED = Color.argb(153, 255, 255, 255)   // white 60%
     private val DIVIDER    = Color.argb(13,  255, 255, 255)   // white 5%
     private val CHIP_BG    = Color.argb(8,   255, 255, 255)   // white 3%
@@ -92,6 +94,20 @@ object WalkShareUtils {
         })
     }
 
+    // ── Formatting ───────────────────────────────────────────────────────────
+
+    private fun formatDistance(km: Double): String {
+        return if (km >= 1000) {
+            "%,.0f".format(km)
+        } else if (km >= 10) {
+            "${Math.round(km)}"
+        } else if (km > 0.0) {
+            "%.1f".format(km)
+        } else {
+            "0"
+        }
+    }
+
     // ── Builders ─────────────────────────────────────────────────────────────
 
     fun dailyCardData(date: LocalDate, durationMins: Long, distanceKm: Double): ShareCardData {
@@ -99,8 +115,8 @@ object WalkShareUtils {
         return ShareCardData(
             chipLabel = "$month ${date.dayOfMonth}, ${date.year}",
             col1      = null,
-            col2      = ShareMetric(if (distanceKm > 0.0) "%.1f".format(distanceKm) else "-", "KMS COVERED"),
-            col3      = ShareMetric(if (durationMins > 0) "$durationMins" else "-", "MINS WALKED"),
+            col2      = ShareMetric(if (distanceKm > 0.0) formatDistance(distanceKm) else "-", "KILOMETRES COVERED"),
+            col3      = ShareMetric(if (durationMins > 0) "$durationMins" else "-", "MINUTES WALKED"),
             goalBadge  = if (durationMins >= 30) "30 MINUTE WALKING GOAL HIT" else null,
             fileName   = "layzbug_${date.year}${date.monthNumber.toString().padStart(2,'0')}${date.dayOfMonth.toString().padStart(2,'0')}",
             shareText  = "My walks on ${date.dayOfMonth} ${date.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${date.year} — Tracked with Layzbug App"
@@ -112,8 +128,8 @@ object WalkShareUtils {
         return ShareCardData(
             chipLabel = "$monthName $year",
             col1      = ShareMetric(if (daysWalked > 0) "$daysWalked" else "-", "DAYS WALKED"),
-            col2      = ShareMetric(if (distanceKm > 0.0) "%.1f".format(distanceKm) else "-", "KMS COVERED"),
-            col3      = ShareMetric(if (totalMins > 0) "$totalMins" else "-", "MINS WALKED"),
+            col2      = ShareMetric(if (distanceKm > 0.0) formatDistance(distanceKm) else "-", "KILOMETRES COVERED"),
+            col3      = ShareMetric(if (totalMins > 0) "$totalMins" else "-", "MINUTES WALKED"),
             goalBadge  = null,
             fileName   = "layzbug_${monthName.lowercase()}_$year",
             shareText  = "My walks in ${monthName.lowercase().replaceFirstChar { it.uppercase() }} $year — Tracked with Layzbug App"
@@ -124,11 +140,12 @@ object WalkShareUtils {
         return ShareCardData(
             chipLabel = "$year",
             col1      = ShareMetric(if (daysWalked > 0) "$daysWalked" else "-", "DAYS WALKED"),
-            col2      = ShareMetric(if (distanceKm > 0.0) "%.1f".format(distanceKm) else "-", "KMS COVERED"),
-            col3      = ShareMetric(if (totalMins > 0) "$totalMins" else "-", "MINS WALKED"),
+            col2      = ShareMetric(if (distanceKm > 0.0) formatDistance(distanceKm) else "-", "KILOMETRES COVERED"),
+            col3      = ShareMetric(if (totalMins > 0) "$totalMins" else "-", "MINUTES WALKED"),
             goalBadge  = null,
             fileName   = "layzbug_$year",
-            shareText  = "My walks in $year — Tracked with Layzbug App"
+            shareText  = "My walks in $year — Tracked with Layzbug App",
+            accentColor = Color.parseColor("#FFFF4400") // Orange Accent for Yearly Stats
         )
     }
 
@@ -148,15 +165,30 @@ object WalkShareUtils {
         val numSize   = METRIC_NUM_SIZE_DP * dp
         val labelSize = METRIC_LABEL_SIZE_DP * dp
 
-        // Dynamic Height Calculation (Mimicking Compose Column stacking)
-        val numPaint = Paint().apply { textSize = numSize; typeface = jetbrainsMono }
-        val labelPaint = Paint().apply { textSize = labelSize; typeface = victorMono }
+        // Dynamic Height Calculation
+        val numPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = numSize; typeface = jetbrainsMono }
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = labelSize
+            typeface = victorMono
+            letterSpacing = 0.1f
+            color = TEXT_MUTED
+        }
+
         val numH = numPaint.fontMetrics.descent - numPaint.fontMetrics.ascent
         val lblH = labelPaint.fontMetrics.descent - labelPaint.fontMetrics.ascent
-        val metricsBlockH = numH + (SPACER_METRIC_TO_LABEL_DP * dp) + lblH
+
+        // Two lines for labels
+        val labelLineGap = SPACER_LABEL_LINE_DP * dp
+        val totalLabelH = (lblH * 2) + labelLineGap
+
+        val metricsBlockH = numH + (SPACER_METRIC_TO_LABEL_DP * dp) + totalLabelH
 
         val hasGoal = data.goalBadge != null
-        val totalCardHeight = pad + chipH + (SPACER_CHIP_TO_METRICS_DP * dp) + metricsBlockH + (if (hasGoal) (SPACER_LABEL_TO_GOAL_DP * dp) + goalH else 0f) + pad
+
+        // Pad bottom dynamically based on whether there's a goal pill or not
+        val bottomPad = if (hasGoal) pad else (PAD_BOTTOM_NO_GOAL_DP * dp)
+
+        val totalCardHeight = pad + chipH + (SPACER_CHIP_TO_METRICS_DP * dp) + metricsBlockH + (if (hasGoal) (SPACER_LABEL_TO_GOAL_DP * dp) + goalH else 0f) + bottomPad
 
         val W = (CARD_W_DP * dp).toInt()
         val H = totalCardHeight.toInt()
@@ -187,19 +219,17 @@ object WalkShareUtils {
         val chipBotY = chipTopY + chipH
         val chipY    = chipTopY + chipH / 2f
         val chipR    = chipH / 2f
-        val chipPadH = 12f * dp
-        val chipTextSize = TOP_CHIP_TEXT_SIZE_DP * dp
 
-        // --- Left Chip: Calendar Date ---
+        val chipTextSize = TOP_CHIP_TEXT_SIZE_DP * dp
         paint.textSize    = chipTextSize
         paint.typeface    = victorMono
         paint.letterSpacing = 0.1f
-
         val chipText  = data.chipLabel.uppercase()
         val chipTextW = paint.measureText(chipText)
 
         val iconSz   = 12f * dp
         val iconGap  = 8f * dp
+        val chipPadH = 12f * dp
         val chipW    = chipPadH + iconSz + iconGap + chipTextW + chipPadH
         val chipL    = pad
         val chipRt   = chipL + chipW
@@ -211,15 +241,15 @@ object WalkShareUtils {
         canvas.drawRoundRect(chipL, chipTopY, chipRt, chipBotY, chipR, chipR, paint)
         paint.style = Paint.Style.FILL
 
-        // Date Calendar icon
-        drawCalendarIcon(canvas, dp, chipL + chipPadH, chipY, iconSz)
+        // Date Calendar icon (Dynamically colored based on accent)
+        drawCalendarIcon(canvas, dp, chipL + chipPadH, chipY, iconSz, data.accentColor)
 
-        // Date text
+        // Date label
         paint.color = TEXT_MUTED
         val lmDate = paint.fontMetrics
         canvas.drawText(chipText, chipL + chipPadH + iconSz + iconGap, chipY - (lmDate.ascent + lmDate.descent) / 2f, paint)
 
-        // --- Right Chip: LAYZBUG APP Branding ---
+        // LAYZBUG APP Branding Chip
         paint.typeface = Typeface.create(victorMono, Typeface.BOLD)
         val appText = "LAYZBUG APP"
         val appTextW = paint.measureText(appText)
@@ -250,22 +280,25 @@ object WalkShareUtils {
         columns.forEachIndexed { i, metric ->
             val colCentreX = pad + i * colW + colW / 2f
 
-            // Baseline calculations to perfectly respect Top-to-Bottom stacking
             val numBaselineY = metricsTopY - numPaint.fontMetrics.ascent
             val numBottomY = numBaselineY + numPaint.fontMetrics.descent
+            val firstLabelBaselineY = numBottomY + (SPACER_METRIC_TO_LABEL_DP * dp) - labelPaint.fontMetrics.ascent
 
-            val labelBaselineY = numBottomY + (SPACER_METRIC_TO_LABEL_DP * dp) - labelPaint.fontMetrics.ascent
+            // Draw Number with dynamic accent color
+            drawMetricNumber(canvas, dp, numSize, metric.value, colCentreX, numBaselineY, jetbrainsMono, data.accentColor)
 
-            // Draw Number
-            drawMetricNumber(canvas, dp, numSize, metric.value, colCentreX, numBaselineY, jetbrainsMono)
+            // Draw 2-Line Label
+            val words = metric.label.split(" ")
+            var currentLabelY = firstLabelBaselineY
 
-            // Draw Label
-            val lblW = labelPaint.measureText(metric.label)
-            val lblX = colCentreX - lblW / 2f
-            labelPaint.color = TEXT_MUTED
-            canvas.drawText(metric.label, lblX, labelBaselineY, labelPaint)
+            words.forEach { word ->
+                val lblW = labelPaint.measureText(word)
+                val lblX = colCentreX - lblW / 2f
+                canvas.drawText(word, lblX, currentLabelY, labelPaint)
+                currentLabelY += lblH + labelLineGap
+            }
 
-            // Vertical divider (Matches MonthHero height(40.dp))
+            // Vertical divider
             if (i < colCount - 1) {
                 val divX = pad + (i + 1) * colW
                 val divH = 40f * dp
@@ -275,10 +308,9 @@ object WalkShareUtils {
         }
 
         // ── 5. Full-Width Goal Pill ────────────────────────────────────
-        if (data.goalBadge != null) {
+        if (hasGoal) {
             val pillTop = metricsTopY + metricsBlockH + (SPACER_LABEL_TO_GOAL_DP * dp)
-            // Left pad, Right W - pad ensures it spans full width
-            drawGoalPill(canvas, dp, pad, pillTop, W - pad, pillTop + goalH, data.goalBadge, victorMono)
+            drawGoalPill(canvas, dp, pad, pillTop, W - pad, pillTop + goalH, data.goalBadge!!, victorMono)
         }
 
         return bmp
@@ -286,12 +318,12 @@ object WalkShareUtils {
 
     // ── Calendar icon ─────────────────────────────────────────────────────────
 
-    private fun drawCalendarIcon(canvas: Canvas, dp: Float, iconLeft: Float, centreY: Float, size: Float) {
+    private fun drawCalendarIcon(canvas: Canvas, dp: Float, iconLeft: Float, centreY: Float, size: Float, accentColor: Int) {
         val iconTop = centreY - size / 2f
         val iconR   = 1.5f * dp
 
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = GREEN; style = Paint.Style.STROKE
+            color = accentColor; style = Paint.Style.STROKE
             strokeWidth = 1.2f * dp; strokeCap = Paint.Cap.ROUND
         }
         canvas.drawRoundRect(iconLeft, iconTop, iconLeft + size, iconTop + size, iconR, iconR, stroke)
@@ -312,19 +344,26 @@ object WalkShareUtils {
     private fun drawMetricNumber(
         canvas: Canvas, dp: Float, numSize: Float,
         value: String, centreX: Float, baselineY: Float,
-        jetbrainsMono: Typeface
+        jetbrainsMono: Typeface, accentColor: Int
     ) {
+        // Dynamically compute glow colour (80% opacity, ~204 out of 255)
+        val r = Color.red(accentColor)
+        val g = Color.green(accentColor)
+        val b = Color.blue(accentColor)
+        val glowColor = Color.argb(204, r, g, b)
+
         val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = numSize; typeface = jetbrainsMono; letterSpacing = -0.06f
-            color = Color.argb(204, 0, 255, 102)
-            isFakeBoldText = false // Regular weight
+            color = glowColor
+            isFakeBoldText = false
             maskFilter = BlurMaskFilter(8f * dp, BlurMaskFilter.Blur.NORMAL)
         }
         val crispPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = numSize; typeface = jetbrainsMono; letterSpacing = -0.06f
-            color = GREEN
-            isFakeBoldText = false // Regular weight
+            color = accentColor
+            isFakeBoldText = false
         }
+
         val numW = crispPaint.measureText(value)
         val numX = centreX - numW / 2f
 
@@ -355,17 +394,14 @@ object WalkShareUtils {
             typeface      = victorMono
             letterSpacing = 0.1f
             color         = GOAL_PILL_TEXT
-            textAlign     = Paint.Align.CENTER // Center align enabled
+            textAlign     = Paint.Align.CENTER
         }
 
         val labelText = label.uppercase()
         val lm = txtPaint.fontMetrics
 
-        // Find exact center coordinates
         val pillCentreX = left + (right - left) / 2f
         val pillCentreY = top + (bottom - top) / 2f
-
-        // Vertically center text based on font metrics
         val textY = pillCentreY - ((lm.ascent + lm.descent) / 2f)
 
         canvas.drawText(labelText, pillCentreX, textY, txtPaint)

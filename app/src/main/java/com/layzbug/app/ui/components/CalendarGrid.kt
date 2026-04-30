@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +37,7 @@ private val VictorMono = FontFamily(
 
 private val MonthAccent = Color(0xFF00FF66)
 private val RamsSurface = Color(0xFF151619)
+private val UnwalkedGrey = Color(0xFFF0EBF1) // Added a clean light grey tone
 
 @Composable
 fun CalendarGrid(
@@ -50,7 +53,7 @@ fun CalendarGrid(
             columns = GridCells.Fixed(7),
             contentPadding = PaddingValues(bottom = Dimens.spaceBase),
             horizontalArrangement = Arrangement.spacedBy(Dimens.spaceXs),
-            verticalArrangement = Arrangement.spacedBy(Dimens.spaceXl),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             items(
@@ -78,10 +81,17 @@ fun CalendarDayItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val cardBackground = lerp(SurfaceContainer, Color.White, 0.4f)
+
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(cardBackground)
+            .clickable { onClick() }
+            .padding(vertical = 12.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Day oval
         Box(
@@ -90,16 +100,15 @@ fun CalendarDayItem(
                 .clip(CircleShape)
                 .background(
                     if (isWalked) RamsSurface
-                    else SurfaceContainer
-                )
-                .clickable { onClick() },
+                    else UnwalkedGrey // Applied the new light grey tone here
+                ),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = dayNumber.toString(),
                 fontFamily = JetBrainsMono,
                 fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
+                fontSize = 15.sp,
                 letterSpacing = (-0.5).sp,
                 color = if (isWalked) MonthAccent else MaterialTheme.colorScheme.onSurface,
                 style = if (isWalked) {
@@ -116,15 +125,15 @@ fun CalendarDayItem(
             )
         }
 
-        // Minutes only — km is kept in the data model and shown in the bottom sheet
+        // Minutes
         Text(
-            text = if (minutes > 0) "${minutes}m" else "—",
+            text = if (minutes > 0) "${minutes}m" else " ",
             fontFamily = VictorMono,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            lineHeight = 10.sp,
+            lineHeight = 14.sp,
             letterSpacing = 1.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
         )
     }
 }
