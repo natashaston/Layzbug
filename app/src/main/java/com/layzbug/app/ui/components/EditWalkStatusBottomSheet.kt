@@ -9,10 +9,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,13 +22,15 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -70,8 +73,6 @@ fun EditWalkStatusContent(
     isLoggedIn: Boolean = true,
     onSignInClick: () -> Unit = {}
 ) {
-    val monthName = date.month.name.lowercase().replaceFirstChar { it.uppercase() }.uppercase()
-    val dateLabel = "$monthName ${date.dayOfMonth}, ${date.year}"
     val goalReached = durationMins >= 30
 
     val context = LocalContext.current
@@ -79,7 +80,6 @@ fun EditWalkStatusContent(
 
     var manualOverride   by remember(date) { mutableStateOf(if (!goalReached) currentStatus else false) }
     var showAlert        by remember(date) { mutableStateOf(if (!goalReached) currentStatus else false) }
-    var showSharePreview by remember { mutableStateOf(false) }
     var shareBitmap      by remember { mutableStateOf<Bitmap?>(null) }
 
     LaunchedEffect(manualOverride) {
@@ -87,109 +87,69 @@ fun EditWalkStatusContent(
         else                { delay(260); showAlert = false }
     }
 
-    // Sheet only shown once bitmap is ready — no stutter
-    val bmp = shareBitmap
-    if (showSharePreview && bmp != null) {
-        SharePreviewBottomSheet(
-            bitmap    = bmp,
-            cardData  = WalkShareUtils.dailyCardData(date, durationMins, distanceKm),
-            onDismiss = {
-                showSharePreview = false
-                shareBitmap = null
-            }
-        )
+    // Generate the bitmap natively immediately
+    LaunchedEffect(date, durationMins, distanceKm) {
+        val cardData = WalkShareUtils.dailyCardData(date, durationMins, distanceKm)
+        shareBitmap = WalkShareUtils.renderCardBitmap(context, cardData)
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
-            .padding(top = 20.dp, bottom = 40.dp)
+            .padding(top = 8.dp, bottom = 40.dp) // Matched top padding
     ) {
 
-        // Date chip + share icon
-        Row(
-            modifier              = Modifier.fillMaxWidth(),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
+        shareBitmap?.let { bmp ->
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = "Share Preview",
                 modifier = Modifier
-                    .height(28.dp)
-                    .background(RamsChipBg, CircleShape)
-                    .border(1.dp, RamsChipBorder, CircleShape)
-                    .padding(horizontal = 12.dp),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(GreenAccent))
-                Text(
-                    text          = dateLabel,
-                    color         = Color.White.copy(alpha = 0.6f),
-                    fontSize      = 11.sp,
-                    fontFamily    = VictorMono,
-                    letterSpacing = 1.1.sp
-                )
-            }
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp)),
+                contentScale = ContentScale.FillWidth
+            )
 
-            // Share icon — hidden for manually marked days
-            // Tapping renders the bitmap first, then opens the sheet
+            // Show Share Action Button if not manually overridden
             if (!manualOverride) {
-                IconButton(
-                    onClick  = {
-                        scope.launch {
-                            val cardData = WalkShareUtils.dailyCardData(date, durationMins, distanceKm)
-                            shareBitmap      = WalkShareUtils.renderCardBitmap(context, cardData)
-                            showSharePreview = true
-                        }
-                    },
-                    modifier = Modifier.size(36.dp)
+                Spacer(modifier = Modifier.height(24.dp)) // Matched spacing
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .clip(CircleShape)
+                        .background(RamsSurface)
+                        .clickable {
+                            scope.launch {
+                                val cardData = WalkShareUtils.dailyCardData(date, durationMins, distanceKm)
+                                WalkShareUtils.shareFromBitmap(context, bmp, cardData)
+                            }
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        imageVector        = Icons.Outlined.Share,
-                        contentDescription = "Share walk",
-                        tint               = Color(0xFF151619),
-                        modifier           = Modifier.size(22.dp)
+                        imageVector = Icons.Outlined.Share,
+                        contentDescription = "Share Walk",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp) // Matched size
+                    )
+                    Spacer(modifier = Modifier.width(10.dp)) // Matched inner spacing
+                    Text(
+                        text = "Share", // Matched text
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontFamily = VictorMono,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.3.sp
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Metrics table
-        Column(modifier = Modifier.fillMaxWidth()) {
-            MetricRow("Minutes Walked",     if (durationMins > 0) "$durationMins min" else "—")
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(RamsBorder))
-            MetricRow("Kilometres Covered", if (distanceKm > 0) "${"%.1f".format(distanceKm)} km" else "—")
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(RamsBorder))
-        }
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        if (goalReached) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFFD6F5E3))
-                    .border(1.dp, Color(0xFF7DCFA0), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(text = "✓", color = Color(0xFF1A6E35), fontSize = 16.sp, fontFamily = JetBrainsMono)
-                Text(
-                    text          = "You've hit your 30-minute walking goal for this day.",
-                    color         = Color(0xFF1A6E35),
-                    fontSize      = 15.sp,
-                    fontFamily    = VictorMono,
-                    fontWeight    = FontWeight.Medium,
-                    letterSpacing = 0.sp,
-                    lineHeight    = 24.sp
-                )
-            }
-        } else {
+        // Toggles, states, and logic
+        if (!goalReached) {
+            Spacer(modifier = Modifier.height(24.dp)) // Matched gap before the next element
             Column {
                 Row(
                     modifier          = Modifier.fillMaxWidth(),
@@ -320,17 +280,5 @@ private fun GoogleGLogoInline(modifier: Modifier = Modifier) {
         drawArc(Color(0xFF34A853),  45f,  90f, false, tl, arcSize, style = Stroke(sw, cap = StrokeCap.Butt))
         drawArc(Color(0xFF4285F4), -15f, 105f, false, tl, arcSize, style = Stroke(sw, cap = StrokeCap.Butt))
         drawLine(Color(0xFF4285F4), Offset(s/2, s/2), Offset(s - sw, s/2), sw, StrokeCap.Square)
-    }
-}
-
-@Composable
-private fun MetricRow(label: String, value: String) {
-    Row(
-        modifier              = Modifier.fillMaxWidth().height(52.dp),
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = label, color = BodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
-        Text(text = value, color = HeadlineColor, fontSize = 16.sp, fontFamily = JetBrainsMono, letterSpacing = (-0.5).sp)
     }
 }

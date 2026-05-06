@@ -3,7 +3,6 @@ package com.layzbug.app.ui.components
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,23 +35,6 @@ private val VictorMonoPreview = FontFamily(
  *
  * Accepts a pre-rendered [bitmap] so the sheet opens instantly with no stutter.
  * The bitmap is rendered by the call site before showing the sheet.
- *
- * Usage in EditWalkStatusContent:
- *   IconButton(onClick = {
- *       scope.launch {
- *           val bmp = WalkShareUtils.renderCardBitmap(context, cardData)
- *           shareBitmap = bmp
- *           showSharePreview = true
- *       }
- *   })
- *
- *   if (showSharePreview && shareBitmap != null) {
- *       SharePreviewBottomSheet(
- *           bitmap    = shareBitmap!!,
- *           cardData  = cardData,
- *           onDismiss = { showSharePreview = false }
- *       )
- *   }
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,33 +71,6 @@ fun SharePreviewBottomSheet(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-
-            // Header chip
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .height(28.dp)
-                        .background(Color(0xFF151619), CircleShape)
-                        .border(1.dp, Color.Black.copy(alpha = 0.08f), CircleShape)
-                        .padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(4.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF00FF66))
-                    )
-                    Text(
-                        text          = "SHARE PREVIEW",
-                        color         = Color.White.copy(alpha = 0.6f),
-                        fontSize      = 11.sp,
-                        fontFamily    = VictorMonoPreview,
-                        letterSpacing = 1.1.sp
-                    )
-                }
-            }
 
             // Card preview — bitmap is already ready, renders instantly
             Image(
