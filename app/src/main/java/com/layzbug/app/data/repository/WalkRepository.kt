@@ -75,6 +75,11 @@ class WalkRepository @Inject constructor(
     /**
      * Health Connect update — never overwrites manual walked status.
      * Always updates distance/minutes and re-syncs to Supabase if manual.
+     *
+     * Minutes never go down — Health Connect session records sync slower than
+     * aggregates, so a stale read can return fewer minutes than already stored.
+     * We take the higher value and re-evaluate isWalked from finalMinutes in
+     * case sessions were stale but we already had enough minutes stored.
      */
     suspend fun updateWalkFromGoogleFit(
         date: LocalDate,
@@ -87,13 +92,25 @@ class WalkRepository @Inject constructor(
 
         if (!isManual) {
             val finalDistance = if (distanceKm > 0) distanceKm else existing?.distanceKm ?: 0.0
-            walkDao.upsertWalk(WalkEntity(date, isWalked, finalDistance, minutes, isManual = false))
-            Log.d("WalkRepository", "✅ Health Connect update: $date = $isWalked, ${finalDistance}km, ${minutes}min")
+
+            // Never let minutes go down — stale Health Connect reads can return
+            // fewer minutes than what's already correctly stored in Room
+            val finalMinutes = maxOf(minutes, existing?.minutes ?: 0L)
+
+            // Re-evaluate isWalked using finalMinutes in case Health Connect
+            // sessions were stale but stored minutes already crossed the threshold
+            val finalIsWalked = isWalked || finalMinutes >= 30
+
+            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance, finalMinutes, isManual = false))
+            Log.d("WalkRepository", "✅ Health Connect update: $date = $finalIsWalked, ${finalDistance}km, ${finalMinutes}min")
         } else {
             // Manual day — preserve walked status, only update stats
             if (distanceKm > 0 || minutes > 0) {
                 val newDistance = if (distanceKm > 0) distanceKm else existing?.distanceKm ?: 0.0
-                val newMinutes  = if (minutes > 0) minutes else existing?.minutes ?: 0L
+
+                // Same maxOf logic for manual days — don't let stale reads reduce minutes
+                val newMinutes = maxOf(minutes, existing?.minutes ?: 0L)
+
                 walkDao.upsertWalk(WalkEntity(date, existing!!.isWalked, newDistance, newMinutes, isManual = true))
                 Log.d("WalkRepository", "📏 Stats updated for manual day $date: ${newDistance}km, ${newMinutes}min")
 

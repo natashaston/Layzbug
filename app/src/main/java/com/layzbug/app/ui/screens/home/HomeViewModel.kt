@@ -73,9 +73,27 @@ class HomeViewModel @Inject constructor(
                 Log.d("LayzbugSync", "✅ Already logged in, starting Supabase listener")
                 walkRepository.startSupabaseSync()
             }
+
             if (!hasInitialSyncCompleted) {
                 val hasPerms = checkPermissions()
-                if (hasPerms) startInitialSync()
+                if (hasPerms) {
+                    startInitialSync()
+                } else {
+                    // Permissions not granted yet — retry every 2 seconds until granted.
+                    // Handles the case where Health Connect dialog appears after init,
+                    // or on fresh installs where permissions haven't been set yet.
+                    var retries = 0
+                    while (retries < 10) {
+                        delay(2000)
+                        val retryPerms = checkPermissions()
+                        Log.d("LayzbugSync", "🔁 Retry $retries: perms=$retryPerms")
+                        if (retryPerms) {
+                            startInitialSync()
+                            break
+                        }
+                        retries++
+                    }
+                }
             }
         }
     }
@@ -93,7 +111,7 @@ class HomeViewModel @Inject constructor(
         walkRepository.getWalksInRange(currentYearStart, currentYearEnd),
         _refreshTrigger
     ) { walks, _ ->
-        val walkCount    = walks.count { it.isWalked }
+        val walkCount     = walks.count { it.isWalked }
         val totalDistance = Math.round(walks.sumOf { it.distanceKm } * 10.0) / 10.0
         val totalMinutes  = walks.sumOf { it.minutes }
         StatsValue(value = walkCount, label = "Yearly", distanceKm = totalDistance, totalMinutes = totalMinutes)
@@ -130,6 +148,7 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun startInitialSync() {
+
         if (hasInitialSyncCompleted) return
         viewModelScope.launch {
             _isSyncing.value = true
@@ -144,7 +163,7 @@ class HomeViewModel @Inject constructor(
                 delay(1000)
                 _refreshTrigger.value++
                 hasInitialSyncCompleted = true
-                installationTracker.markInitialSyncDone()  // persist so it never runs again
+                installationTracker.markInitialSyncDone()
                 _syncCompleted.value = true
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Sync failed: ${e.message}", e)
@@ -165,6 +184,52 @@ class HomeViewModel @Inject constructor(
                 delay(50)
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Silent daily re-sync — no toast, no spinner.
+     * Called from HomeScreen on every ON_RESUME.
+     *
+     * - If initial sync hasn't run yet, does nothing (initial sync covers today).
+     * - Today is NEVER marked as done — re-syncs on every ON_RESUME so late
+     *   walks in the same day are never missed.
+     * - Past missed days (app not opened for N days) are back-filled from
+     *   lastDailySyncDate and marked done so they never re-sync again.
+     */
+    fun syncTodayIfNeeded() {
+        if (!hasInitialSyncCompleted) return
+        // No needsDailySync() guard — today always re-syncs on every ON_RESUME
+
+        viewModelScope.launch {
+            val hasPerms = checkPermissions()
+            if (!hasPerms) return@launch
+
+            try {
+                withContext(Dispatchers.IO) {
+                    val lastSync = installationTracker.getLastDailySyncDate() ?: today
+                    val daysToSync = ChronoUnit.DAYS.between(lastSync, today)
+
+                    for (i in 0..daysToSync) {
+                        val date = lastSync.plusDays(i)
+                        val result = fitSyncManager.checkDailyWalk(date)
+                        walkRepository.updateWalkFromGoogleFit(
+                            date, result.isWalked, result.distanceKm, result.totalMinutes
+                        )
+                        Log.d("LayzbugSync", "✅ Silent sync: $date ${result.totalMinutes}min walked=${result.isWalked}")
+                    }
+
+                    // Only mark done if past days were back-filled.
+                    // Today (daysToSync == 0) is never marked done so it
+                    // re-syncs on every ON_RESUME — late walks are never missed.
+                    if (daysToSync > 0) {
+                        installationTracker.markDailySyncDone()
+                    }
+                }
+                _refreshTrigger.value++
+            } catch (e: Exception) {
+                Log.e("LayzbugSync", "Silent daily sync failed: ${e.message}")
             }
         }
     }

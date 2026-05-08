@@ -28,7 +28,7 @@ class AuthManager @Inject constructor(
         }
 
     val currentUserId: String?
-        get() = GoogleSignIn.getLastSignedInAccount(context)?.id
+        get() = GoogleSignIn.getLastSignedInAccount(context)?.email
 
     fun getGoogleSignInClient(): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)

@@ -44,9 +44,9 @@ class SupabaseRepository @Inject constructor(
 
     private val currentUserId: String?
         get() = try {
-            val id = GoogleSignIn.getLastSignedInAccount(context)?.id
-            Log.d("SupabaseRepository", "currentUserId = $id")
-            id
+            val email = GoogleSignIn.getLastSignedInAccount(context)?.email
+            Log.d("SupabaseRepository", "currentUserId = $email")
+            email
         } catch (e: Exception) {
             Log.e("SupabaseRepository", "Failed to get userId: ${e.message}")
             null

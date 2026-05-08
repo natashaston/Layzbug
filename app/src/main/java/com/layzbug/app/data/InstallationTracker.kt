@@ -46,4 +46,24 @@ class InstallationTracker(context: Context) {
 
     fun markInitialSyncDone() =
         prefs.edit().putBoolean("initial_sync_done", true).apply()
+
+    // ── Daily sync ────────────────────────────────────────────────────
+    // Tracks the last date walks were re-synced from Health Connect.
+    // Separate from initial sync — this runs once per calendar day, silently.
+    // If the app hasn't been opened for multiple days, syncTodayIfNeeded()
+    // uses this date as the anchor to back-fill all missed days.
+
+    fun getLastDailySyncDate(): LocalDate? {
+        val saved = prefs.getString("last_daily_sync_date", null)
+        return if (saved != null) LocalDate.parse(saved) else null
+    }
+
+    fun markDailySyncDone() {
+        prefs.edit().putString("last_daily_sync_date", LocalDate.now().toString()).apply()
+    }
+
+    fun needsDailySync(): Boolean {
+        val last = getLastDailySyncDate() ?: return true
+        return last.isBefore(LocalDate.now())
+    }
 }
