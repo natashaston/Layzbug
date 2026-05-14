@@ -67,12 +67,21 @@ private val GreenAccent   = Color(0xFF00FF66)
 
 // ─── MAIN SCREEN ────────────────────────────────────────────────────
 
+/**
+ * @param onComplete         Called after all permissions are handled. Navigates to home.
+ * @param onPermissionsGranted Called immediately when Health Connect permissions are granted,
+ *                           BEFORE onComplete fires. HomeViewModel.onPermissionsGranted()
+ *                           should be wired here so initial sync starts while onboarding
+ *                           is still completing, giving sync a head start before home renders.
+ * @param viewOnly           When true, skips permission requests (used for replaying onboarding).
+ */
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit,
+    onPermissionsGranted: () -> Unit = {},
     viewOnly: Boolean = false
 ) {
-    val context = LocalContext.current
+    val context    = LocalContext.current
     var currentPage by remember { mutableIntStateOf(0) }
     val totalPages = if (viewOnly) 5 else 6
 
@@ -83,7 +92,6 @@ fun OnboardingScreen(
         HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
     )
 
-    // Track grant states to reflect in UI toggles on PagePermissions
     var notifGranted by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
@@ -101,11 +109,10 @@ fun OnboardingScreen(
         )
     }
 
-    // Step 3: Battery optimisation — fire intent, then complete
+    // Step 3: Battery optimisation → then complete
     val requestBatteryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
-        // Re-check grant state
         batteryGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
             (context.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager)
                 .isIgnoringBatteryOptimizations(context.packageName)
@@ -113,12 +120,23 @@ fun OnboardingScreen(
         onComplete()
     }
 
-    // Step 2: Health Connect → then battery
+    // Step 2: Health Connect → notify ViewModel → then battery
     val requestHealthLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { granted ->
         Log.d("Onboarding", "Health Connect granted: $granted")
         healthGranted = granted.isNotEmpty()
+
+        // ── KEY FIX ──────────────────────────────────────────────────
+        // Notify HomeViewModel that permissions are now granted so it can
+        // start the initial sync immediately — before navigation to home.
+        // Previously nothing called this, so HomeViewModel.init's permission
+        // check always found perms missing on a fresh install, and the 10-retry
+        // polling loop timed out after 20s without ever syncing.
+        if (healthGranted) {
+            onPermissionsGranted()
+        }
+
         // Launch battery optimisation next
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
@@ -169,7 +187,7 @@ fun OnboardingScreen(
 
             AnimatedContent(
                 targetState = currentPage,
-                modifier = Modifier.weight(1f),
+                modifier    = Modifier.weight(1f),
                 transitionSpec = {
                     val gap = 0.15f
                     if (targetState > initialState)
@@ -193,19 +211,19 @@ fun OnboardingScreen(
 
             // Bottom nav
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment     = Alignment.CenterVertically
             ) {
                 if (currentPage > 0) {
                     OutlinedButton(
-                        onClick = { currentPage-- },
-                        shape = CircleShape,
-                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                        onClick  = { currentPage-- },
+                        shape    = CircleShape,
+                        border   = ButtonDefaults.outlinedButtonBorder.copy(
                             brush = androidx.compose.ui.graphics.SolidColor(Color.Black.copy(alpha = 0.1f))
                         ),
                         contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black.copy(alpha = 0.4f))
+                        colors   = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black.copy(alpha = 0.4f))
                     ) {
                         Text(text = "BACK", fontSize = 12.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
@@ -221,7 +239,7 @@ fun OnboardingScreen(
                             if (viewOnly) {
                                 onComplete()
                             } else {
-                                // Fire permission chain: notif → health → battery → onComplete
+                                // Permission chain: notif → health → battery → onComplete
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                     requestNotifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 } else {
@@ -230,15 +248,17 @@ fun OnboardingScreen(
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RamsSurface),
-                    shape = CircleShape,
+                    colors         = ButtonDefaults.buttonColors(containerColor = RamsSurface),
+                    shape          = CircleShape,
                     contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp)
                 ) {
                     val lastLabel = if (viewOnly) "CLOSE" else "GET STARTED"
                     Text(
-                        text = if (currentPage < totalPages - 1) "NEXT" else lastLabel,
-                        color = OrangeAccent, fontSize = 13.sp,
-                        fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold,
+                        text          = if (currentPage < totalPages - 1) "NEXT" else lastLabel,
+                        color         = OrangeAccent,
+                        fontSize      = 13.sp,
+                        fontFamily    = JetBrainsMono,
+                        fontWeight    = FontWeight.Bold,
                         letterSpacing = 1.3.sp
                     )
                 }
@@ -339,8 +359,8 @@ private fun PageSmartDetection() {
                 val killStart = 100f; val killEnd = 200f
                 val killProgress = if (!chip.isValid && fallY > killStart) ((fallY - killStart) / (killEnd - killStart)).coerceIn(0f, 1f) else 0f
                 val isExploding = !chip.isValid && killProgress in 0.01f..0.99f
-                val isDead = !chip.isValid && killProgress >= 0.99f
-                val chipAlpha = when { chip.isValid -> 1f; killProgress < 0.1f -> 1f; else -> 0f }
+                val isDead      = !chip.isValid && killProgress >= 0.99f
+                val chipAlpha   = when { chip.isValid -> 1f; killProgress < 0.1f -> 1f; else -> 0f }
                 if (!isDead) {
                     Box(modifier = Modifier.fillMaxWidth().offset(y = fallY.dp)) {
                         Box(modifier = Modifier.align(BiasAlignment(xFraction * 2 - 1, 0f)).graphicsLayer { alpha = chipAlpha }) { RainChipPill(text = chip.text, isValid = chip.isValid) }
@@ -372,7 +392,7 @@ private fun BoxScope.ExplosionParticles(chipKey: String, xFraction: Float, yOffs
             Canvas(modifier = Modifier.size(200.dp)) {
                 val centerX = size.width / 2; val centerY = size.height / 2
                 particles.forEach { p ->
-                    val t = progress
+                    val t  = progress
                     val px = centerX + kotlin.math.cos(p.angle) * p.speed * t * density
                     val py = centerY + kotlin.math.sin(p.angle) * p.speed * t * density + (p.gravity * t * t * density)
                     val alpha = (1f - (t / p.lifeDecay).coerceAtMost(1f)).coerceAtLeast(0f)

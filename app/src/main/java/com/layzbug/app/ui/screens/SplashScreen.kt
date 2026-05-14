@@ -26,66 +26,66 @@ fun SplashScreen(
     onSyncComplete: () -> Unit
 ) {
     val isSyncing by viewModel.isSyncing.collectAsState()
-    val alpha = remember { Animatable(0f) }
+    val alpha     = remember { Animatable(0f) }
+    var syncStarted by remember { mutableStateOf(false) }
+
+    // Watches isSyncing true → false transition after sync was kicked off
+    LaunchedEffect(isSyncing) {
+        if (syncStarted && !isSyncing) {
+            Log.d("SplashScreen", "✅ Sync complete — navigating home")
+            delay(500)
+            onSyncComplete()
+        }
+    }
 
     LaunchedEffect(Unit) {
         Log.d("SplashScreen", "🚀 Starting splash screen")
+        alpha.animateTo(1f, animationSpec = tween(500))
 
-        val startTime = System.currentTimeMillis()
-
-        // Check permissions FIRST
         val hasPerms = viewModel.checkPermissions()
         Log.d("SplashScreen", "Permissions: $hasPerms")
 
-        if (hasPerms) {
-            // Has permissions — sync and go home
-            Log.d("SplashScreen", "Starting sync...")
-            viewModel.startInitialSync()
-
-            // Wait for sync to complete (with 30 second timeout)
-            var waitTime = 0L
-            while (isSyncing && waitTime < 30000) {
-                delay(100)
-                waitTime += 100
-            }
-
-            Log.d("SplashScreen", "Sync complete after ${waitTime}ms")
-
-            // Give time for database writes and UI refresh
-            delay(500)
-
-            onSyncComplete()
-        } else {
-            // No permissions — show animation then route to onboarding
-            alpha.animateTo(1f, animationSpec = tween(500))
-
-            // Enforce minimum 1.5s brand presence
-            val elapsed = System.currentTimeMillis() - startTime
-            if (elapsed < 1500) {
-                delay(1500 - elapsed)
-            }
-
+        if (!hasPerms) {
+            delay(1000)
             Log.d("SplashScreen", "📋 No permissions — showing onboarding")
             onNavigateToOnboarding()
+            return@LaunchedEffect
+        }
+
+        // Permissions granted — attempt initial sync.
+        // startInitialSync() is a no-op if the initial sync already completed
+        // in a previous session (hasInitialSyncCompleted = true). In that case
+        // isSyncing never goes true and the LaunchedEffect(isSyncing) never fires,
+        // so we navigate directly here after a short brand pause.
+        val wasAlreadySynced = viewModel.hasInitialSyncCompleted()
+        if (wasAlreadySynced) {
+            Log.d("SplashScreen", "✅ Already synced — navigating home directly")
+            delay(800)
+            onSyncComplete()
+        } else {
+            Log.d("SplashScreen", "Starting initial sync...")
+            syncStarted = true
+            viewModel.startInitialSync()
+            // Navigation handled by LaunchedEffect(isSyncing) above
         }
     }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color.White
+        color    = Color.White
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier         = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "LAYZBUG",
-                fontFamily = FontFamily(Font(R.font.jetbrains_mono_regular, FontWeight.Normal)),
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+                text          = "LAYZBUG",
+                fontFamily    = FontFamily(Font(R.font.jetbrains_mono_regular, FontWeight.Normal)),
+                fontSize      = 28.sp,
+                fontWeight    = FontWeight.Bold,
                 letterSpacing = 8.sp,
-                color = Color(0xFF151619),
-                modifier = Modifier.alpha(alpha.value)
+                color         = Color(0xFF151619),
+                modifier      = Modifier.alpha(alpha.value)
             )
         }
     }

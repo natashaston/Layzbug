@@ -35,11 +35,11 @@ class HomeViewModel @Inject constructor(
     private val authManager: AuthManager
 ) : ViewModel() {
 
-    private val today = LocalDate.now()
-    private val startOfYear = installationTracker.getSyncStartDate()
+    private val today            = LocalDate.now()
+    private val startOfYear      = installationTracker.getSyncStartDate()
     private val currentYearStart = LocalDate.of(today.year, 1, 1)
-    private val currentYearEnd = LocalDate.of(today.year, 12, 31)
-    private val startOfWeek = today.minusDays(6)
+    private val currentYearEnd   = LocalDate.of(today.year, 12, 31)
+    private val startOfWeek      = today.minusDays(6)
 
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
@@ -50,11 +50,9 @@ class HomeViewModel @Inject constructor(
     private val _syncToastDismissed = MutableStateFlow(false)
     val syncToastDismissed: StateFlow<Boolean> = _syncToastDismissed.asStateFlow()
 
-    // ── Auth state as a StateFlow so any screen can drive it ──────────
     private val _isLoggedIn = MutableStateFlow(authManager.isLoggedIn)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
-    // Persisted in SharedPreferences — survives process death
     private var hasInitialSyncCompleted = installationTracker.hasInitialSyncDone()
     private val _refreshTrigger = MutableStateFlow(0)
 
@@ -69,32 +67,41 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             delay(500)
+
             if (walkRepository.isSupabaseLoggedIn()) {
                 Log.d("LayzbugSync", "✅ Already logged in, starting Supabase listener")
                 walkRepository.startSupabaseSync()
             }
 
-            if (!hasInitialSyncCompleted) {
-                val hasPerms = checkPermissions()
-                if (hasPerms) {
-                    startInitialSync()
-                } else {
-                    // Permissions not granted yet — retry every 2 seconds until granted.
-                    // Handles the case where Health Connect dialog appears after init,
-                    // or on fresh installs where permissions haven't been set yet.
-                    var retries = 0
-                    while (retries < 10) {
-                        delay(2000)
-                        val retryPerms = checkPermissions()
-                        Log.d("LayzbugSync", "🔁 Retry $retries: perms=$retryPerms")
-                        if (retryPerms) {
-                            startInitialSync()
-                            break
-                        }
-                        retries++
-                    }
-                }
+            // Only attempt initial sync here if permissions are already granted.
+            // On a fresh install, permissions won't be granted yet — OnboardingScreen
+            // requests them and calls onPermissionsGranted() once the user approves.
+            // The old retry loop (10 × 2s polling) is removed because:
+            //   (a) it gave up after 20s if the user was slow on the dialog
+            //   (b) after reinstall, Health Connect revokes permissions and the
+            //       loop always timed out, leaving the app in a broken state
+            if (!hasInitialSyncCompleted && checkPermissions()) {
+                startInitialSync()
             }
+        }
+    }
+
+    /**
+     * Called by OnboardingScreen immediately after Health Connect permissions
+     * are granted (inside the PermissionController result callback).
+     *
+     * This replaces the old polling retry loop. The onboarding flow chains:
+     *   notif permission → health permission → battery optimisation → onComplete()
+     * OnboardingScreen's onComplete() navigates to home, but the permission result
+     * callback fires BEFORE navigation, so we start sync here while the user is
+     * still seeing the onboarding completion — by the time home renders, sync
+     * has a head start.
+     */
+    fun hasInitialSyncCompleted(): Boolean = hasInitialSyncCompleted
+    fun onPermissionsGranted() {
+        Log.d("LayzbugSync", "✅ Permissions granted callback received")
+        if (!hasInitialSyncCompleted) {
+            startInitialSync()
         }
     }
 
@@ -148,7 +155,6 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun startInitialSync() {
-
         if (hasInitialSyncCompleted) return
         viewModelScope.launch {
             _isSyncing.value = true
@@ -200,7 +206,6 @@ class HomeViewModel @Inject constructor(
      */
     fun syncTodayIfNeeded() {
         if (!hasInitialSyncCompleted) return
-        // No needsDailySync() guard — today always re-syncs on every ON_RESUME
 
         viewModelScope.launch {
             val hasPerms = checkPermissions()
@@ -208,11 +213,11 @@ class HomeViewModel @Inject constructor(
 
             try {
                 withContext(Dispatchers.IO) {
-                    val lastSync = installationTracker.getLastDailySyncDate() ?: today
+                    val lastSync   = installationTracker.getLastDailySyncDate() ?: today
                     val daysToSync = ChronoUnit.DAYS.between(lastSync, today)
 
                     for (i in 0..daysToSync) {
-                        val date = lastSync.plusDays(i)
+                        val date   = lastSync.plusDays(i)
                         val result = fitSyncManager.checkDailyWalk(date)
                         walkRepository.updateWalkFromGoogleFit(
                             date, result.isWalked, result.distanceKm, result.totalMinutes
@@ -220,9 +225,6 @@ class HomeViewModel @Inject constructor(
                         Log.d("LayzbugSync", "✅ Silent sync: $date ${result.totalMinutes}min walked=${result.isWalked}")
                     }
 
-                    // Only mark done if past days were back-filled.
-                    // Today (daysToSync == 0) is never marked done so it
-                    // re-syncs on every ON_RESUME — late walks are never missed.
                     if (daysToSync > 0) {
                         installationTracker.markDailySyncDone()
                     }
@@ -240,10 +242,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Called after sign-in from ANY screen.
-     * Updates the shared isLoggedIn state immediately.
-     */
     fun onUserSignedIn() {
         viewModelScope.launch {
             _isLoggedIn.value = true

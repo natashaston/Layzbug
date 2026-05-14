@@ -515,10 +515,13 @@ fun LayzbugNavHost(
                     )
                 }
                 composable(route = "onboarding", enterTransition = { fadeIn(animationSpec = tween(500)) }, exitTransition = { ExitTransition.None }) {
-                    OnboardingScreen(onComplete = {
-                        installationTracker.setOnboardingComplete()
-                        navController.navigate("home") { popUpTo("onboarding") { inclusive = true } }
-                    })
+                    OnboardingScreen(
+                        onComplete = {
+                            installationTracker.setOnboardingComplete()
+                            navController.navigate("home") { popUpTo("onboarding") { inclusive = true } }
+                        },
+                        onPermissionsGranted = { homeViewModel.onPermissionsGranted() }
+                    )
                 }
                 composable(route = "home", enterTransition = { EnterTransition.None }, exitTransition = { ExitTransition.None }) {
                     HomeScreen(

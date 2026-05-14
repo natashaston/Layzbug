@@ -37,51 +37,62 @@ class FitSyncManager @Inject constructor(
     }
 
     /**
-     * Walk detection rules (applied to BOTH session data and step-inferred walks):
+     * Walk detection rules:
      * - Each walk segment must be >= 5 minutes
-     * - Sum of qualified walks must reach >= 30 minutes
+     * - Sum of qualified segments must reach >= 30 minutes
      *
-     * Tries exercise sessions first (when Google Fit logs them).
-     * Falls back to inferring walks from step data when no sessions exist.
+     * Strategy:
+     * 1. Read exercise sessions. Compute qualified session minutes (segments >= 5 min).
+     * 2. If sessions already qualify (>= 30 min), done.
+     * 3. If sessions don't qualify — whether empty OR present but too short/noisy —
+     *    ALSO run step inference and take the better of the two readings.
+     *
+     * FIX: Previously step inference was gated on `sessionResponse.records.isEmpty()`.
+     * A single noise session (e.g. a 3-min warm-up) would block inference entirely,
+     * leaving a valid 40-min walk marked as unwalked.
+     *
+     * We take maxOf(session, inferred) rather than summing — both sensors describe
+     * the same physical walk, so adding them would double-count.
      */
     suspend fun checkDailyWalk(date: LocalDate): DailyWalkResult {
         try {
-            val zoneId = ZoneId.systemDefault()
+            val zoneId    = ZoneId.systemDefault()
             val startTime = date.atStartOfDay(zoneId).toInstant()
-            val endTime = date.plusDays(1).atStartOfDay(zoneId).toInstant()
+            val endTime   = date.plusDays(1).atStartOfDay(zoneId).toInstant()
             val timeRange = TimeRangeFilter.between(startTime, endTime)
 
-            // ── Strategy 1: Read Google Fit exercise sessions ──
+            // ── Strategy 1: Exercise sessions ───────────────────────────────
             val sessionResponse = healthConnectClient.readRecords(
                 ReadRecordsRequest(
-                    recordType = ExerciseSessionRecord::class,
+                    recordType      = ExerciseSessionRecord::class,
                     timeRangeFilter = timeRange
                 )
             )
 
-            val sessionDurations = sessionResponse.records.map { session ->
+            val sessionDurations        = sessionResponse.records.map { session ->
                 Duration.between(session.startTime, session.endTime).toMinutes()
             }
             val qualifiedSessionMinutes = sessionDurations.filter { it >= 5 }.sum()
 
-            // ── Strategy 2: Fallback — infer walks from step data ──
-            // Used when no exercise sessions are available
-            val inferredWalks: List<Long> = if (sessionResponse.records.isEmpty()) {
-                inferWalksFromSteps(timeRange)
+            // ── Strategy 2: Step inference — supplement when sessions don't qualify ──
+            // Runs whenever qualifiedSessionMinutes < 30, including when sessions
+            // exist but are all noise (< 5 min each). Previously only ran when
+            // records were completely empty — that was the bug.
+            val qualifiedInferredMinutes: Long = if (qualifiedSessionMinutes < 30) {
+                inferWalksFromSteps(timeRange).filter { it >= 5 }.sum()
             } else {
-                emptyList()
+                0L
             }
-            val qualifiedInferredMinutes = inferredWalks.filter { it >= 5 }.sum()
 
-            // ── Combined: take whichever source has data ──
-            val totalQualifiedMinutes = qualifiedSessionMinutes + qualifiedInferredMinutes
-            val isWalked = totalQualifiedMinutes >= 30
+            // Take the better reading — don't add (same walk, two sensors)
+            val totalQualifiedMinutes = maxOf(qualifiedSessionMinutes, qualifiedInferredMinutes)
+            val isWalked              = totalQualifiedMinutes >= 30
 
-            // ── Distance for the day ──
+            // ── Distance ────────────────────────────────────────────────────
             val distanceKm = try {
                 val aggregateResponse = healthConnectClient.aggregate(
                     AggregateRequest(
-                        metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
+                        metrics         = setOf(DistanceRecord.DISTANCE_TOTAL),
                         timeRangeFilter = timeRange
                     )
                 )
@@ -92,11 +103,17 @@ class FitSyncManager @Inject constructor(
                 0.0
             }
 
-            Log.d("FitSync", "📊 $date: sessions=$sessionDurations, inferred=$inferredWalks, qualified=${totalQualifiedMinutes}min, walked=$isWalked, ${distanceKm}km")
+            Log.d(
+                "FitSync",
+                "📊 $date: sessions=$sessionDurations " +
+                        "qualifiedSession=${qualifiedSessionMinutes}min " +
+                        "qualifiedInferred=${qualifiedInferredMinutes}min " +
+                        "total=${totalQualifiedMinutes}min walked=$isWalked ${distanceKm}km"
+            )
 
             return DailyWalkResult(
-                isWalked = isWalked,
-                distanceKm = distanceKm,
+                isWalked     = isWalked,
+                distanceKm   = distanceKm,
                 totalMinutes = totalQualifiedMinutes,
                 sessionCount = sessionResponse.records.size
             )
@@ -107,40 +124,34 @@ class FitSyncManager @Inject constructor(
     }
 
     /**
-     * Infer walking segments from step data when Google Fit didn't log sessions.
-     * Reads steps in 1-minute buckets, treats >= 40 steps/min as walking.
-     * Returns the duration (in minutes) of each continuous walking segment.
+     * Infer walking segments from step data.
+     * Reads steps in 1-minute buckets; treats >= 40 steps/min as walking.
+     * Returns duration (in minutes) of each continuous walking segment.
      * No gap tolerance — any minute below 40 steps ends the segment.
      */
     private suspend fun inferWalksFromSteps(timeRange: TimeRangeFilter): List<Long> {
         return try {
             val response = healthConnectClient.aggregateGroupByDuration(
                 AggregateGroupByDurationRequest(
-                    metrics = setOf(StepsRecord.COUNT_TOTAL),
+                    metrics         = setOf(StepsRecord.COUNT_TOTAL),
                     timeRangeFilter = timeRange,
                     timeRangeSlicer = Duration.ofMinutes(1)
                 )
             )
 
-            val segments = mutableListOf<Long>()
+            val segments              = mutableListOf<Long>()
             var currentSegmentMinutes = 0L
 
             for (bucket in response) {
                 val stepsInMinute = bucket.result[StepsRecord.COUNT_TOTAL] ?: 0L
-
                 if (stepsInMinute >= 40) {
                     currentSegmentMinutes++
                 } else {
-                    if (currentSegmentMinutes > 0) {
-                        segments.add(currentSegmentMinutes)
-                    }
+                    if (currentSegmentMinutes > 0) segments.add(currentSegmentMinutes)
                     currentSegmentMinutes = 0
                 }
             }
-            // Don't forget the last segment
-            if (currentSegmentMinutes > 0) {
-                segments.add(currentSegmentMinutes)
-            }
+            if (currentSegmentMinutes > 0) segments.add(currentSegmentMinutes)
 
             segments
         } catch (e: Exception) {
