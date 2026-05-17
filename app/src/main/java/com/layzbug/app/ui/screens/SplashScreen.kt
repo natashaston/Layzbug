@@ -16,20 +16,22 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.layzbug.app.R
+import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.ui.screens.home.HomeViewModel
 import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(
     viewModel: HomeViewModel,
+    installationTracker: InstallationTracker,
     onNavigateToOnboarding: () -> Unit,
     onSyncComplete: () -> Unit
 ) {
-    val isSyncing by viewModel.isSyncing.collectAsState()
-    val alpha     = remember { Animatable(0f) }
+    val isSyncing   by viewModel.isSyncing.collectAsState()
+    val alpha       = remember { Animatable(0f) }
     var syncStarted by remember { mutableStateOf(false) }
 
-    // Watches isSyncing true → false transition after sync was kicked off
+    // Watches isSyncing true → false after sync was kicked off here
     LaunchedEffect(isSyncing) {
         if (syncStarted && !isSyncing) {
             Log.d("SplashScreen", "✅ Sync complete — navigating home")
@@ -42,42 +44,57 @@ fun SplashScreen(
         Log.d("SplashScreen", "🚀 Starting splash screen")
         alpha.animateTo(1f, animationSpec = tween(500))
 
-        val hasPerms = viewModel.checkPermissions()
-        Log.d("SplashScreen", "Permissions: $hasPerms")
+        // ── DEBUG: log all prefs state on every launch ────────────────
+        val onboardingDone  = installationTracker.isOnboardingComplete()
+        val syncDone        = installationTracker.hasInitialSyncDone()
+        val syncStartDate   = installationTracker.getSyncStartDate()
+        val lastDailySync   = installationTracker.getLastDailySyncDate()
+        Log.d("SplashDebug", "=== SPLASH STATE ===")
+        Log.d("SplashDebug", "onboardingDone  = $onboardingDone")
+        Log.d("SplashDebug", "syncDone        = $syncDone")
+        Log.d("SplashDebug", "syncStartDate   = $syncStartDate")
+        Log.d("SplashDebug", "lastDailySync   = $lastDailySync")
+        Log.d("SplashDebug", "====================")
 
-        if (!hasPerms) {
+        Log.d("SplashScreen", "Onboarding complete: $onboardingDone")
+
+        if (!onboardingDone) {
+            // First time ever — always show onboarding.
+            // No permission check, no shortcuts. Onboarding handles everything.
             delay(1000)
-            Log.d("SplashScreen", "📋 No permissions — showing onboarding")
+            Log.d("SplashScreen", "📋 Onboarding not done — showing onboarding")
             onNavigateToOnboarding()
             return@LaunchedEffect
         }
 
-        // Permissions granted — attempt initial sync.
-        // startInitialSync() is a no-op if the initial sync already completed
-        // in a previous session (hasInitialSyncCompleted = true). In that case
-        // isSyncing never goes true and the LaunchedEffect(isSyncing) never fires,
-        // so we navigate directly here after a short brand pause.
+        // ── Returning user — onboarding already completed ─────────────
+        // Go home. Permission and sync state is handled by HomeScreen's
+        // ON_RESUME observer and HomeViewModel — not by splash.
+
         val wasAlreadySynced = viewModel.hasInitialSyncCompleted()
+        Log.d("SplashDebug", "wasAlreadySynced = $wasAlreadySynced")
+
         if (wasAlreadySynced) {
             Log.d("SplashScreen", "✅ Already synced — navigating home directly")
             delay(800)
             onSyncComplete()
         } else {
-            Log.d("SplashScreen", "Starting initial sync...")
-            syncStarted = true
-            viewModel.startInitialSync()
-            // Navigation handled by LaunchedEffect(isSyncing) above
+            val hasPerms = viewModel.checkPermissions()
+            Log.d("SplashDebug", "hasPerms = $hasPerms")
+            if (hasPerms) {
+                Log.d("SplashScreen", "✅ Perms granted — starting initial sync")
+                syncStarted = true
+                viewModel.startInitialSync()
+            } else {
+                Log.d("SplashScreen", "✅ No perms yet — navigating home, toast will show")
+                delay(800)
+                onSyncComplete()
+            }
         }
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color    = Color.White
-    ) {
-        Box(
-            modifier         = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
+    Surface(modifier = Modifier.fillMaxSize(), color = Color.White) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 text          = "LAYZBUG",
                 fontFamily    = FontFamily(Font(R.font.jetbrains_mono_regular, FontWeight.Normal)),

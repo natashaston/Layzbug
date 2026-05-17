@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
@@ -77,6 +78,7 @@ private val RamsGridLine  = Color.Gray.copy(alpha = 0.03f)
 private val RamsChipBg    = Color.White.copy(alpha = 0.03f)
 private val OrangeAccent  = Color(0xFFFF4400)
 private val GreenAccent   = Color(0xFF00FF66)
+private val GoalGreen     = Color(0xFF1A6E35)
 
 // ─── PERMISSION ROW STATE ────────────────────────────────────────────
 
@@ -92,11 +94,11 @@ private data class ManufacturerInfo(
 
 private fun detectManufacturer(): ManufacturerInfo {
     return when (Build.MANUFACTURER.lowercase().trim()) {
-        "samsung"                   -> ManufacturerInfo("Samsung Health",       "com.sec.android.app.shealth")
-        "xiaomi", "redmi", "poco"   -> ManufacturerInfo("Mi Fitness",           "com.xiaomi.wearable")
-        "huawei", "honor"           -> ManufacturerInfo("Huawei Health",        "", playStoreId = "nl.appyhapps.healthsync")
-        "oneplus", "oppo", "realme" -> ManufacturerInfo("OHealth",              "com.oppo.health")
-        else                        -> ManufacturerInfo("Google Fit",           "com.google.android.apps.fitness")
+        "samsung"                   -> ManufacturerInfo("Samsung Health",  "com.sec.android.app.shealth")
+        "xiaomi", "redmi", "poco"   -> ManufacturerInfo("Mi Fitness",      "com.xiaomi.wearable")
+        "huawei", "honor"           -> ManufacturerInfo("Huawei Health",   "", playStoreId = "nl.appyhapps.healthsync")
+        "oneplus", "oppo", "realme" -> ManufacturerInfo("OHealth",         "com.oppo.health")
+        else                        -> ManufacturerInfo("Google Fit",      "com.google.android.apps.fitness")
     }
 }
 
@@ -107,20 +109,53 @@ private fun openManufacturerApp(context: Context, info: ManufacturerInfo) {
                 Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${info.playStoreId}"))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
+            return
+        }
+        // Stock Android / Google Fit — open Health Connect directly
+        if (info.packageName == "com.google.android.apps.fitness") {
+            openHealthConnectSettings(context)
+            return
+        }
+        val intent = context.packageManager.getLaunchIntentForPackage(info.packageName)
+        if (intent != null) {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } else {
-            val intent = context.packageManager.getLaunchIntentForPackage(info.packageName)
-            if (intent != null) {
-                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } else {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${info.packageName}"))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${info.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         }
     } catch (e: Exception) {
         Log.e("Onboarding", "Failed to open manufacturer app: ${e.message}")
     }
+}
+
+private fun openAppSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    )
+}
+
+private fun openHealthConnectSettings(context: Context) {
+    try {
+        context.startActivity(
+            Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    } catch (e: Exception) {
+        openAppSettings(context)
+    }
+}
+
+private fun canShowNotifDialog(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+    val activity = context as? ComponentActivity ?: return true
+    return ActivityCompat.shouldShowRequestPermissionRationale(
+        activity, Manifest.permission.POST_NOTIFICATIONS
+    )
 }
 
 private suspend fun hasHealthConnectData(context: Context): Boolean {
@@ -137,6 +172,23 @@ private suspend fun hasHealthConnectData(context: Context): Boolean {
         false
     }
 }
+
+// Full set — for the launcher dialog. Includes history permission.
+private val fullHealthPermissions = setOf(
+    HealthPermission.getReadPermission(StepsRecord::class),
+    HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+    HealthPermission.getReadPermission(DistanceRecord::class),
+    HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+)
+
+// Detection subset — for ON_RESUME check.
+// HC settings UI does NOT show PERMISSION_READ_HEALTH_DATA_HISTORY as a toggle,
+// so we only check the 3 data permissions when detecting settings-based grants.
+private val detectionHealthPermissions = setOf(
+    HealthPermission.getReadPermission(StepsRecord::class),
+    HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+    HealthPermission.getReadPermission(DistanceRecord::class)
+)
 
 private suspend fun isHealthConnectGranted(context: Context, permissions: Set<String>): Boolean {
     return try {
@@ -160,7 +212,6 @@ fun OnboardingScreen(
 
     var ctaLabel        by remember { mutableStateOf("GET STARTED") }
     var ctaEnabled      by remember { mutableStateOf(true) }
-    var pageOwnsButton  by remember { mutableStateOf(false) }
     var permPageTrigger by remember { mutableIntStateOf(0) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.White) {
@@ -171,7 +222,6 @@ fun OnboardingScreen(
                 .padding(top = 48.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Page indicators
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 repeat(totalPages) { index ->
                     Box(
@@ -209,8 +259,7 @@ fun OnboardingScreen(
                         onPermissionsGranted = onPermissionsGranted,
                         onComplete           = onComplete,
                         onCtaLabelChange     = { ctaLabel = it },
-                        onCtaEnabledChange   = { ctaEnabled = it },
-                        onOwnsButton         = { pageOwnsButton = it }
+                        onCtaEnabledChange   = { ctaEnabled = it }
                     )
                 }
             }
@@ -224,15 +273,13 @@ fun OnboardingScreen(
             ) {
                 if (currentPage > 0) {
                     OutlinedButton(
-                        onClick = { if (!pageOwnsButton) currentPage-- },
-                        shape   = CircleShape,
-                        border  = ButtonDefaults.outlinedButtonBorder.copy(
+                        onClick        = { currentPage-- },
+                        shape          = CircleShape,
+                        border         = ButtonDefaults.outlinedButtonBorder.copy(
                             brush = androidx.compose.ui.graphics.SolidColor(Color.Black.copy(alpha = 0.1f))
                         ),
                         contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
-                        colors  = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.Black.copy(alpha = if (pageOwnsButton) 0.2f else 0.4f)
-                        )
+                        colors         = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black.copy(alpha = 0.4f))
                     ) {
                         Text("BACK", fontSize = 12.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
@@ -244,11 +291,8 @@ fun OnboardingScreen(
                     enabled        = ctaEnabled,
                     onClick        = {
                         if (viewOnly) { onComplete(); return@Button }
-                        if (currentPage < totalPages - 1) {
-                            currentPage++
-                        } else {
-                            permPageTrigger++
-                        }
+                        if (currentPage < totalPages - 1) currentPage++
+                        else permPageTrigger++
                     },
                     colors         = ButtonDefaults.buttonColors(
                         containerColor         = RamsSurface,
@@ -284,111 +328,50 @@ private fun PagePermissions(
     onPermissionsGranted: () -> Unit,
     onComplete: () -> Unit,
     onCtaLabelChange: (String) -> Unit,
-    onCtaEnabledChange: (Boolean) -> Unit,
-    onOwnsButton: (Boolean) -> Unit
+    onCtaEnabledChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
     val mfr     = remember { detectManufacturer() }
-
-    val healthPermissions = remember {
-        setOf(
-            HealthPermission.getReadPermission(StepsRecord::class),
-            HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-            HealthPermission.getReadPermission(DistanceRecord::class),
-            HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
-        )
-    }
 
     var notifState      by remember { mutableStateOf(PermRowState.IDLE) }
     var healthState     by remember { mutableStateOf(PermRowState.IDLE) }
     var batteryState    by remember { mutableStateOf(PermRowState.IDLE) }
     var mfrState        by remember { mutableStateOf(PermRowState.IDLE) }
     var dataState       by remember { mutableStateOf(PermRowState.IDLE) }
-    var sequenceStarted by remember { mutableStateOf(false) }
     var lastTrigger     by remember { mutableIntStateOf(0) }
+    var notifAttempted  by remember { mutableStateOf(false) }
+    var showSkipWarningSheet by remember { mutableStateOf(false) }
+    var healthLaunchTime by remember { mutableLongStateOf(0L) }
 
-    fun recheckSync() {
-        val notifOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-                    PackageManager.PERMISSION_GRANTED
-        else true
-        if (notifOk) notifState = PermRowState.GRANTED
+    // ── Launchers ────────────────────────────────────────────────────
 
-        val batteryOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-            (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-                .isIgnoringBatteryOptimizations(context.packageName)
-        else true
-        if (batteryOk) batteryState = PermRowState.GRANTED
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notifAttempted = true
+        notifState = if (granted) PermRowState.GRANTED else PermRowState.FAILED
     }
 
-    // Initial check on render
-    LaunchedEffect(Unit) {
-        recheckSync()
-        val hcOk = isHealthConnectGranted(context, healthPermissions)
-        if (hcOk) healthState = PermRowState.GRANTED
-        if (hcOk) {
-            dataState = PermRowState.LOADING
-            val hasData = hasHealthConnectData(context)
-            if (hasData) {
-                dataState = PermRowState.GRANTED
-                mfrState  = PermRowState.GRANTED
+    val healthLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        val ok = granted.isNotEmpty()
+        if (ok) {
+            healthState = PermRowState.GRANTED
+            onPermissionsGranted()
+        } else {
+            val elapsed = System.currentTimeMillis() - healthLaunchTime
+            if (elapsed < 500L) {
+                // Dialog silently suppressed — redirect to HC settings
+                Log.d("Onboarding", "HC dialog suppressed (${elapsed}ms) — opening HC settings")
+                openHealthConnectSettings(context)
             } else {
-                dataState = PermRowState.IDLE
+                healthState = PermRowState.FAILED
             }
         }
     }
 
-    // ON_RESUME — re-check everything when user returns from another app
-    DisposableEffect(Unit) {
-        val activity = context as? ComponentActivity
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                recheckSync()
-                scope.launch {
-                    val hcOk = isHealthConnectGranted(context, healthPermissions)
-                    if (hcOk && healthState != PermRowState.GRANTED) {
-                        healthState = PermRowState.GRANTED
-                        onPermissionsGranted()
-                    }
-                    if (mfrState == PermRowState.LOADING || mfrState == PermRowState.FAILED) {
-                        dataState = PermRowState.LOADING
-                        delay(1500)
-                        val hasData = hasHealthConnectData(context)
-                        if (hasData) {
-                            mfrState  = PermRowState.GRANTED
-                            dataState = PermRowState.GRANTED
-                        } else {
-                            mfrState  = PermRowState.FAILED
-                            dataState = PermRowState.FAILED
-                        }
-                        sequenceStarted = false
-                        onCtaEnabledChange(true)
-                        onOwnsButton(false)
-                    }
-                }
-            }
-        }
-        activity?.lifecycle?.addObserver(observer)
-        onDispose { activity?.lifecycle?.removeObserver(observer) }
-    }
-
-    val allGranted = notifState   == PermRowState.GRANTED &&
-            healthState  == PermRowState.GRANTED &&
-            batteryState == PermRowState.GRANTED &&
-            dataState    == PermRowState.GRANTED
-    val dataFailed = dataState == PermRowState.FAILED
-
-    LaunchedEffect(allGranted, dataFailed, sequenceStarted) {
-        when {
-            allGranted      -> { onCtaLabelChange("LET'S GO");     onCtaEnabledChange(true);  onOwnsButton(false) }
-            dataFailed      -> { onCtaLabelChange("SKIP FOR NOW"); onCtaEnabledChange(true);  onOwnsButton(false) }
-            sequenceStarted -> { onCtaEnabledChange(false);                                   onOwnsButton(true)  }
-            else            -> { onCtaLabelChange("GET STARTED");  onCtaEnabledChange(true);  onOwnsButton(false) }
-        }
-    }
-
-    // Launchers
     val batteryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
@@ -397,16 +380,39 @@ private fun PagePermissions(
                 .isIgnoringBatteryOptimizations(context.packageName)
         else true
         batteryState = if (ok) PermRowState.GRANTED else PermRowState.FAILED
-        mfrState = PermRowState.LOADING
-        openManufacturerApp(context, mfr)
     }
 
-    val healthLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionResultContract()
-    ) { granted ->
-        val ok = granted.isNotEmpty()
-        healthState = if (ok) PermRowState.GRANTED else PermRowState.FAILED
-        if (ok) onPermissionsGranted()
+    // ── Individual actions ────────────────────────────────────────────
+
+    val provideNotif: () -> Unit = {
+        notifAttempted = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val alreadyGranted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (alreadyGranted) {
+                notifState = PermRowState.GRANTED
+            } else {
+                val canShow    = canShowNotifDialog(context)
+                val neverAsked = notifState == PermRowState.IDLE
+                if (neverAsked || canShow) {
+                    notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    openAppSettings(context)
+                }
+            }
+        } else {
+            notifState = PermRowState.GRANTED
+        }
+    }
+
+    val provideHealth: () -> Unit = {
+        // Launch with FULL permission set including history
+        healthLaunchTime = System.currentTimeMillis()
+        healthLauncher.launch(fullHealthPermissions)
+    }
+
+    val provideBattery: () -> Unit = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
@@ -417,260 +423,282 @@ private fun PagePermissions(
                 )
             } else {
                 batteryState = PermRowState.GRANTED
-                mfrState     = PermRowState.LOADING
-                openManufacturerApp(context, mfr)
             }
         } else {
             batteryState = PermRowState.GRANTED
-            mfrState     = PermRowState.LOADING
-            openManufacturerApp(context, mfr)
         }
     }
 
-    val notifLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        notifState = if (granted) PermRowState.GRANTED else PermRowState.FAILED
-        healthLauncher.launch(healthPermissions)
-    }
-
-    // Trigger sequence on button tap
-    LaunchedEffect(trigger) {
-        if (trigger == 0 || trigger == lastTrigger) return@LaunchedEffect
-        lastTrigger = trigger
-
-        if (allGranted || dataFailed) { onComplete(); return@LaunchedEffect }
-
-        sequenceStarted = true
-
-        val skipNotif   = notifState   == PermRowState.GRANTED
-        val skipHealth  = healthState  == PermRowState.GRANTED
-        val skipBattery = batteryState == PermRowState.GRANTED
-        val skipData    = dataState    == PermRowState.GRANTED
-
-        when {
-            skipData -> {
-                sequenceStarted = false
-                onCtaLabelChange("LET'S GO")
-                onCtaEnabledChange(true)
-                onOwnsButton(false)
-            }
-            skipNotif && skipHealth && skipBattery -> {
-                mfrState = PermRowState.LOADING
-                openManufacturerApp(context, mfr)
-            }
-            skipNotif && skipHealth -> {
-                val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                    !pm.isIgnoringBatteryOptimizations(context.packageName)) {
-                    batteryLauncher.launch(
-                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                            data = Uri.parse("package:${context.packageName}")
-                        }
-                    )
-                } else {
-                    batteryState = PermRowState.GRANTED
-                    mfrState     = PermRowState.LOADING
-                    openManufacturerApp(context, mfr)
-                }
-            }
-            skipNotif -> { healthLauncher.launch(healthPermissions) }
-            else -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    notifState = PermRowState.GRANTED
-                    healthLauncher.launch(healthPermissions)
-                }
-            }
-        }
-    }
-
-    val onRetryMfr: () -> Unit = {
-        mfrState        = PermRowState.LOADING
-        dataState       = PermRowState.IDLE
-        sequenceStarted = true
-        onCtaEnabledChange(false)
-        onOwnsButton(true)
+    val provideMfr: () -> Unit = {
+        mfrState = PermRowState.LOADING
         openManufacturerApp(context, mfr)
     }
 
+    val retryData: () -> Unit = {
+        scope.launch {
+            dataState = PermRowState.LOADING
+            delay(1500)
+            val hasData = hasHealthConnectData(context)
+            dataState = if (hasData) PermRowState.GRANTED else PermRowState.FAILED
+            if (hasData) mfrState = PermRowState.GRANTED
+        }
+    }
+
+    // ── Initial render check ──────────────────────────────────────────
+
+    LaunchedEffect(Unit) {
+        val notifOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                    PackageManager.PERMISSION_GRANTED
+        else true
+        if (notifOk) { notifState = PermRowState.GRANTED; notifAttempted = true }
+
+        val batteryOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+                .isIgnoringBatteryOptimizations(context.packageName)
+        else true
+        if (batteryOk) batteryState = PermRowState.GRANTED
+
+        // Use detection subset (3 perms) for initial check
+        val hcOk = isHealthConnectGranted(context, detectionHealthPermissions)
+        if (hcOk) healthState = PermRowState.GRANTED
+        if (hcOk) {
+            dataState = PermRowState.LOADING
+            val hasData = hasHealthConnectData(context)
+            if (hasData) { dataState = PermRowState.GRANTED; mfrState = PermRowState.GRANTED }
+            else dataState = PermRowState.IDLE
+        }
+    }
+
+    // ── ON_RESUME re-check ────────────────────────────────────────────
+
+    DisposableEffect(Unit) {
+        val activity = context as? ComponentActivity
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    // Row 1: Notifications
+                    val notifOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                                PackageManager.PERMISSION_GRANTED
+                    else true
+                    if (notifOk) { notifState = PermRowState.GRANTED; notifAttempted = true }
+
+                    // Row 2: Health Connect — use DETECTION subset (3 perms)
+                    // so that settings-based grants are correctly detected
+                    val hcOk = isHealthConnectGranted(context, detectionHealthPermissions)
+                    if (hcOk && healthState != PermRowState.GRANTED) {
+                        healthState = PermRowState.GRANTED
+                        onPermissionsGranted()
+                    }
+
+                    // Row 3: Battery
+                    val batteryOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                        (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+                            .isIgnoringBatteryOptimizations(context.packageName)
+                    else true
+                    if (batteryOk) batteryState = PermRowState.GRANTED
+
+                    // Rows 4 & 5: Manufacturer app + data check
+                    if (mfrState == PermRowState.LOADING) {
+                        dataState = PermRowState.LOADING
+                        delay(1500)
+                        val hasData = hasHealthConnectData(context)
+                        if (hasData) {
+                            mfrState  = PermRowState.GRANTED
+                            dataState = PermRowState.GRANTED
+                        } else {
+                            mfrState  = PermRowState.FAILED
+                            dataState = PermRowState.FAILED
+                        }
+                    }
+
+                    // If HC is now granted but data hasn't been checked yet
+                    if (hcOk && dataState == PermRowState.IDLE) {
+                        dataState = PermRowState.LOADING
+                        val hasData = hasHealthConnectData(context)
+                        if (hasData) {
+                            mfrState  = PermRowState.GRANTED
+                            dataState = PermRowState.GRANTED
+                        } else {
+                            dataState = PermRowState.FAILED
+                        }
+                    }
+                }
+            }
+        }
+        activity?.lifecycle?.addObserver(observer)
+        onDispose { activity?.lifecycle?.removeObserver(observer) }
+    }
+
+    val allGranted = notifState == PermRowState.GRANTED && healthState == PermRowState.GRANTED &&
+            batteryState == PermRowState.GRANTED && dataState == PermRowState.GRANTED
+    val mandatoryMissing = healthState != PermRowState.GRANTED ||
+            mfrState    != PermRowState.GRANTED ||
+            dataState   != PermRowState.GRANTED
+
+    LaunchedEffect(allGranted, notifAttempted) {
+        when {
+            allGranted     -> { onCtaLabelChange("LET'S GO");     onCtaEnabledChange(true) }
+            notifAttempted -> { onCtaLabelChange("SKIP FOR NOW"); onCtaEnabledChange(true) }
+            else           -> { onCtaLabelChange("GET STARTED");  onCtaEnabledChange(true) }
+        }
+    }
+
+    LaunchedEffect(trigger) {
+        if (trigger == 0 || trigger == lastTrigger) return@LaunchedEffect
+        lastTrigger = trigger
+        when {
+            allGranted       -> { onComplete() }
+            !notifAttempted  -> { provideNotif() }
+            mandatoryMissing -> { showSkipWarningSheet = true }
+            else             -> { onComplete() }
+        }
+    }
+
     // ── UI ───────────────────────────────────────────────────────────
-    // Mirrors notification screen spacing exactly:
-    // Title → 32dp → PERMISSIONS chip → 32dp → description → 40dp → rows
+
     Column(
-        modifier            = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+        modifier            = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // "Almost there" — same style as "Silence is earned"
-        Text(
-            text       = "Almost there",
-            color      = Color.Black.copy(alpha = 0.8f),
-            fontSize   = 20.sp,
-            fontFamily = VictorMono,
-            fontWeight = FontWeight.Bold,
-            textAlign  = TextAlign.Center
-        )
-
+        Text("Almost there", fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VictorMono, textAlign = TextAlign.Center, color = Color.Black.copy(alpha = 0.8f))
         Spacer(Modifier.height(32.dp))
-
-        // "PERMISSIONS" — same style as "ZERO SPAM"
-        Text(
-            text          = "PERMISSIONS",
-            textAlign     = TextAlign.Center,
-            fontFamily    = JetBrainsMono,
-            fontSize      = 13.sp,
-            fontWeight    = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            color         = OrangeAccent
-        )
-
+        Text("PERMISSIONS", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
         Spacer(Modifier.height(32.dp))
-
-        // Description — same style as notification description
         Text(
-            text       = "Grant the permissions below so Layzbug can track your walks and keep you on schedule.",
-            modifier   = Modifier.padding(horizontal = 24.dp),
-            textAlign  = TextAlign.Center,
-            fontFamily = VictorMono,
-            fontSize   = 16.sp,
-            lineHeight = 24.sp,
-            color      = Color.Black.copy(alpha = 0.6f)
+            text = "Grant the permissions below so Layzbug can track your walks and keep you on schedule.",
+            modifier = Modifier.padding(horizontal = 24.dp), textAlign = TextAlign.Center,
+            fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(alpha = 0.6f)
         )
-
         Spacer(Modifier.height(40.dp))
 
-        // Permission rows — label only, dot indicator, same text style as description
-        PermissionRow(label = "Notifications",       state = notifState)
-        PermissionRow(label = "Health Connect",      state = healthState)
-        PermissionRow(label = "Battery unrestricted",state = batteryState)
-        PermissionRow(
-            label   = mfr.label,
-            state   = mfrState,
-            onRetry = if (mfrState == PermRowState.FAILED) onRetryMfr else null
-        )
-        PermissionRow(
-            label   = "Fitness data detected",
-            state   = dataState,
-            onRetry = if (dataState == PermRowState.FAILED) onRetryMfr else null
-        )
+        PermissionRow(label = "Notifications",        state = notifState,   onProvide = if (notifState   == PermRowState.IDLE) provideNotif   else null, onRetry = if (notifState   == PermRowState.FAILED) provideNotif   else null)
+        PermissionRow(label = "Health Connect",       state = healthState,  onProvide = if (healthState  == PermRowState.IDLE) provideHealth  else null, onRetry = if (healthState  == PermRowState.FAILED) provideHealth  else null)
+        PermissionRow(label = "Battery unrestricted", state = batteryState, onProvide = if (batteryState == PermRowState.IDLE) provideBattery else null, onRetry = if (batteryState == PermRowState.FAILED) provideBattery else null)
+        PermissionRow(label = mfr.label,              state = mfrState,     onProvide = if (mfrState     == PermRowState.IDLE) provideMfr     else null, onRetry = if (mfrState     == PermRowState.FAILED) provideMfr     else null)
+        PermissionRow(label = "Fitness data detected",state = dataState,    onProvide = null,                                                            onRetry = if (dataState    == PermRowState.FAILED) retryData      else null)
+    }
 
-        if (dataState == PermRowState.FAILED) {
+    if (showSkipWarningSheet) {
+        SkipWarningSheet(
+            mfrLabel             = mfr.label,
+            onProvidePermissions = {
+                showSkipWarningSheet = false
+                scope.launch {
+                    delay(300)
+                    when {
+                        healthState != PermRowState.GRANTED -> provideHealth()
+                        mfrState    != PermRowState.GRANTED -> provideMfr()
+                        else                                -> retryData()
+                    }
+                }
+            },
+            onSkip    = { showSkipWarningSheet = false; onComplete() },
+            onDismiss = { showSkipWarningSheet = false }
+        )
+    }
+}
+
+// ─── SKIP WARNING SHEET ──────────────────────────────────────────────
+
+@Composable
+private fun SkipWarningSheet(
+    mfrLabel: String,
+    onProvidePermissions: () -> Unit,
+    onSkip: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val ToastRed      = Color(0xFF8B1A1A)
+    val bodyTextMuted = Color.Black.copy(alpha = 0.6f)
+    val headlineColor = Color(0xFF151619)
+
+    com.layzbug.app.ui.components.LayzbugBottomSheet(onClose = onDismiss, lightBackground = true) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 40.dp)
+        ) {
+            Row(
+                modifier = Modifier.height(28.dp).background(ToastRed, CircleShape).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(Color(0xFFFF6B6B)))
+                Text("PERMISSIONS REQUIRED", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontFamily = VictorMono, letterSpacing = 1.1.sp)
+            }
+            Spacer(Modifier.height(32.dp))
+            Text("Walk tracking won't work", color = headlineColor, fontSize = 18.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
             Spacer(Modifier.height(20.dp))
-            Text(
-                text       = "No data found. Open ${mfr.label}, walk a few steps, then retry.",
-                fontSize   = 13.sp,
-                fontFamily = VictorMono,
-                color      = OrangeAccent.copy(alpha = 0.7f),
-                textAlign  = TextAlign.Center,
-                lineHeight = 20.sp,
-                modifier   = Modifier.padding(horizontal = 24.dp)
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text       = "You can skip for now and connect later from Settings.",
-                fontSize   = 12.sp,
-                fontFamily = VictorMono,
-                color      = Color.Black.copy(alpha = 0.35f),
-                textAlign  = TextAlign.Center,
-                modifier   = Modifier.padding(horizontal = 24.dp)
-            )
+            Text("Health Connect, $mfrLabel, and fitness data detection are required for Layzbug to automatically track your walks.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+            Spacer(Modifier.height(20.dp))
+            Text("Proceeding without these means your walks will not be tracked automatically. You can still manually mark days as walked.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+            Spacer(Modifier.height(32.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(
+                    onClick = { onSkip() }, shape = CircleShape,
+                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(Color.Black.copy(alpha = 0.1f))),
+                    contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black.copy(alpha = 0.4f)),
+                    modifier = Modifier.weight(0.28f)
+                ) {
+                    Text("SKIP", fontSize = 12.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1)
+                }
+                Button(
+                    onClick = { onProvidePermissions() },
+                    colors = ButtonDefaults.buttonColors(containerColor = GoalGreen),
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp),
+                    modifier = Modifier.weight(0.72f)
+                ) {
+                    Text("PROVIDE PERMISSIONS", color = Color.White, fontSize = 13.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp, maxLines = 1, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                }
+            }
         }
     }
 }
 
 // ─── PERMISSION ROW ──────────────────────────────────────────────────
-// Label: same style as notification page description (VictorMono 16sp 60% black)
-// Indicator: 8dp dot — same size as the dot beside LAYZBUG in the notification card
 
 @Composable
 private fun PermissionRow(
     label: String,
     state: PermRowState,
+    onProvide: (() -> Unit)? = null,
     onRetry: (() -> Unit)? = null
 ) {
     Row(
-        modifier              = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 14.dp, horizontal = 8.dp),
+        modifier              = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 8dp dot indicator — same as notification card dot beside LAYZBUG
-        Box(
-            modifier         = Modifier.size(20.dp),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
             when (state) {
-                PermRowState.GRANTED -> Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(GreenAccent)
-                )
-                PermRowState.FAILED  -> Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(OrangeAccent)
-                )
-                PermRowState.LOADING -> CircularProgressIndicator(
-                    modifier    = Modifier.size(14.dp),
-                    color       = OrangeAccent,
-                    strokeWidth = 1.5.dp
-                )
-                PermRowState.IDLE    -> Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.15f))
-                )
+                PermRowState.GRANTED -> Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(GreenAccent))
+                PermRowState.FAILED  -> Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(OrangeAccent))
+                PermRowState.LOADING -> CircularProgressIndicator(modifier = Modifier.size(14.dp), color = OrangeAccent, strokeWidth = 1.5.dp)
+                PermRowState.IDLE    -> Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.15f)))
             }
         }
 
-        // Label — same style as notification description
-        Text(
-            text       = label,
-            fontSize   = 16.sp,
-            fontFamily = VictorMono,
-            lineHeight = 24.sp,
-            color      = Color.Black.copy(alpha = 0.6f),
-            modifier   = Modifier.weight(1f)
-        )
+        Text(text = label, fontSize = 16.sp, fontFamily = VictorMono, lineHeight = 24.sp, color = Color.Black.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
 
-        // Retry button — only shown on failure
-        if (onRetry != null && state == PermRowState.FAILED) {
-            Box(
-                modifier         = Modifier
-                    .clip(CircleShape)
-                    .background(OrangeAccent.copy(alpha = 0.1f))
-                    .clickable { onRetry() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text          = "RETRY",
-                    fontSize      = 10.sp,
-                    fontFamily    = JetBrainsMono,
-                    fontWeight    = FontWeight.Bold,
-                    color         = OrangeAccent,
-                    letterSpacing = 0.8.sp
-                )
+        Box(modifier = Modifier.width(84.dp).height(42.dp), contentAlignment = Alignment.Center) {
+            when {
+                onProvide != null && state == PermRowState.IDLE -> {
+                    Box(modifier = Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFF0F0F0)).clickable { onProvide() }, contentAlignment = Alignment.Center) {
+                        Text("PROVIDE", fontSize = 10.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, color = Color(0xFF1A6E35), letterSpacing = 0.8.sp, textAlign = TextAlign.Center)
+                    }
+                }
+                onRetry != null && state == PermRowState.FAILED -> {
+                    Box(modifier = Modifier.fillMaxSize().clip(CircleShape).background(OrangeAccent.copy(alpha = 0.1f)).clickable { onRetry() }, contentAlignment = Alignment.Center) {
+                        Text("RETRY", fontSize = 10.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, color = OrangeAccent, letterSpacing = 0.8.sp, textAlign = TextAlign.Center)
+                    }
+                }
+                else -> Spacer(modifier = Modifier.size(width = 84.dp, height = 42.dp))
             }
         }
     }
 
-    // Divider
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .padding(horizontal = 8.dp)
-            .background(Color.Black.copy(alpha = 0.05f))
-    )
+    Box(modifier = Modifier.fillMaxWidth().height(1.dp).padding(horizontal = 8.dp).background(Color.Black.copy(alpha = 0.05f)))
 }
 
 // ─── PAGE 1: THE HOOK ───────────────────────────────────────────────
@@ -686,7 +714,7 @@ private fun PageHook() {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Image(painter = painterResource(id = R.drawable.ic_layzbug), contentDescription = null, modifier = Modifier.size(140.dp).offset(y = floatingOffset.dp))
         Spacer(modifier = Modifier.height(64.dp))
-        Text(text = "Science says 30 minutes of intentional walking changes everything.\n\nLayzbug helps you prove it.", textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 18.sp, lineHeight = 28.sp, color = Color.Black.copy(alpha = 0.7f))
+        Text("Science says 30 minutes of intentional walking changes everything.\n\nLayzbug helps you prove it.", textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 18.sp, lineHeight = 28.sp, color = Color.Black.copy(alpha = 0.7f))
     }
 }
 
@@ -695,26 +723,25 @@ private fun PageHook() {
 @Composable
 private fun PageGoal() {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(text = "Your Daily Objective", fontWeight = FontWeight.Bold, fontSize = 20.sp, fontFamily = VictorMono, color = Color.Black.copy(alpha = 0.8f))
+        Text("Your Daily Objective", fontWeight = FontWeight.Bold, fontSize = 20.sp, fontFamily = VictorMono, color = Color.Black.copy(alpha = 0.8f))
         Spacer(modifier = Modifier.height(40.dp))
         Box(
-            modifier = Modifier.size(280.dp).clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape)
-                .drawBehind {
-                    val gridSize = 4.dp.toPx()
-                    for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
-                    for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
-                },
+            modifier = Modifier.size(280.dp).clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape).drawBehind {
+                val g = 4.dp.toPx()
+                for (x in 0..size.width.toInt() step g.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
+                for (y in 0..size.height.toInt() step g.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
+            },
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = "30", color = OrangeAccent, fontSize = 100.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Medium, letterSpacing = (-4).sp,
+                Text("30", color = OrangeAccent, fontSize = 100.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Medium, letterSpacing = (-4).sp,
                     style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(color = OrangeAccent.copy(alpha = 0.5f), offset = Offset.Zero, blurRadius = 50f)))
-                Text(text = "MINUTES OF", color = Color.White, fontSize = 14.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center)
-                Text(text = "WALKING",    color = Color.White, fontSize = 14.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center)
+                Text("MINUTES OF", color = Color.White, fontSize = 14.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center)
+                Text("WALKING",    color = Color.White, fontSize = 14.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center)
             }
         }
         Spacer(modifier = Modifier.height(40.dp))
-        Text(text = "🙅🏼🐂💩", fontSize = 28.sp)
+        Text("🙅🏼🐂💩", fontSize = 28.sp)
     }
 }
 
@@ -739,27 +766,24 @@ private fun PageSmartDetection() {
         Spacer(modifier = Modifier.height(32.dp))
         Text("WALKS UNDER 5 MINUTES ARE FILTERED OUT", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
         Spacer(modifier = Modifier.height(40.dp))
-        Box(modifier = Modifier.fillMaxWidth(0.85f).aspectRatio(1f).clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape)
-            .drawBehind {
-                val gridSize = 4.dp.toPx()
-                for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
-                for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
-            }) {
+        Box(modifier = Modifier.fillMaxWidth(0.85f).aspectRatio(1f).clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape).drawBehind {
+            val g = 4.dp.toPx()
+            for (x in 0..size.width.toInt() step g.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
+            for (y in 0..size.height.toInt() step g.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
+        }) {
             chips.forEach { chip ->
-                val fallY by infiniteTransition.animateFloat(initialValue = -100f, targetValue = 460f,
-                    animationSpec = infiniteRepeatable(animation = tween(chip.duration, chip.delay, LinearEasing), repeatMode = RepeatMode.Restart), label = "fall")
+                val fallY by infiniteTransition.animateFloat(initialValue = -100f, targetValue = 460f, animationSpec = infiniteRepeatable(animation = tween(chip.duration, chip.delay, LinearEasing), repeatMode = RepeatMode.Restart), label = "fall")
                 val xFraction    = when (chip.column) { 0 -> 0.15f; 1 -> 0.40f; 2 -> 0.65f; 3 -> 0.85f; else -> 0.5f }
-                val killStart    = 100f; val killEnd = 200f
-                val killProgress = if (!chip.isValid && fallY > killStart) ((fallY - killStart) / (killEnd - killStart)).coerceIn(0f, 1f) else 0f
+                val killProgress = if (!chip.isValid && fallY > 100f) ((fallY - 100f) / 100f).coerceIn(0f, 1f) else 0f
                 val isExploding  = !chip.isValid && killProgress in 0.01f..0.99f
                 val isDead       = !chip.isValid && killProgress >= 0.99f
                 val chipAlpha    = when { chip.isValid -> 1f; killProgress < 0.1f -> 1f; else -> 0f }
                 if (!isDead) {
                     Box(modifier = Modifier.fillMaxWidth().offset(y = fallY.dp)) {
-                        Box(modifier = Modifier.align(BiasAlignment(xFraction * 2 - 1, 0f)).graphicsLayer { alpha = chipAlpha }) { RainChipPill(text = chip.text, isValid = chip.isValid) }
+                        Box(modifier = Modifier.align(BiasAlignment(xFraction * 2 - 1, 0f)).graphicsLayer { alpha = chipAlpha }) { RainChipPill(chip.text, chip.isValid) }
                     }
                 }
-                if (isExploding) ExplosionParticles(chipKey = "${chip.text}_${chip.column}_${chip.delay}", xFraction = xFraction, yOffset = fallY, progress = killProgress)
+                if (isExploding) ExplosionParticles("${chip.text}_${chip.column}_${chip.delay}", xFraction, fallY, killProgress)
             }
         }
         Spacer(modifier = Modifier.height(40.dp))
@@ -769,29 +793,28 @@ private fun PageSmartDetection() {
 
 @Composable
 private fun RainChipPill(text: String, isValid: Boolean) {
-    val textColor = if (isValid) GreenAccent else OrangeAccent
-    Text(text = text, color = textColor, fontSize = 13.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
-        style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(color = textColor.copy(alpha = 0.8f), offset = Offset.Zero, blurRadius = 0f)))
+    val c = if (isValid) GreenAccent else OrangeAccent
+    Text(text, color = c, fontSize = 13.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
+        style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(color = c.copy(alpha = 0.8f), offset = Offset.Zero, blurRadius = 0f)))
 }
 
 @Composable
 private fun BoxScope.ExplosionParticles(chipKey: String, xFraction: Float, yOffset: Float, progress: Float) {
     val particles = remember(chipKey) {
-        val random = kotlin.random.Random(chipKey.hashCode())
-        List(50) { ParticleData(angle = random.nextFloat() * 2f * Math.PI.toFloat(), speed = 20f + random.nextFloat() * 60f, size = 0.4f + random.nextFloat() * 1.1f, gravity = 30f + random.nextFloat() * 40f, lifeDecay = 0.7f + random.nextFloat() * 0.3f, colorMix = random.nextFloat()) }
+        val r = kotlin.random.Random(chipKey.hashCode())
+        List(50) { ParticleData(r.nextFloat() * 2f * Math.PI.toFloat(), 20f + r.nextFloat() * 60f, 0.4f + r.nextFloat() * 1.1f, 30f + r.nextFloat() * 40f, 0.7f + r.nextFloat() * 0.3f, r.nextFloat()) }
     }
     Box(modifier = Modifier.fillMaxWidth().offset(y = (yOffset - 90f).dp)) {
         Box(modifier = Modifier.align(BiasAlignment(xFraction * 2 - 1, 0f))) {
             Canvas(modifier = Modifier.size(200.dp)) {
-                val centerX = size.width / 2; val centerY = size.height / 2
+                val cx = size.width / 2; val cy = size.height / 2
                 particles.forEach { p ->
                     val t = progress
-                    val px = centerX + kotlin.math.cos(p.angle) * p.speed * t * density
-                    val py = centerY + kotlin.math.sin(p.angle) * p.speed * t * density + (p.gravity * t * t * density)
+                    val px = cx + kotlin.math.cos(p.angle) * p.speed * t * density
+                    val py = cy + kotlin.math.sin(p.angle) * p.speed * t * density + (p.gravity * t * t * density)
                     val alpha = (1f - (t / p.lifeDecay).coerceAtMost(1f)).coerceAtLeast(0f)
                     if (alpha <= 0f) return@forEach
-                    val color = androidx.compose.ui.graphics.lerp(OrangeAccent, Color(0xFFFFAA00), p.colorMix).copy(alpha = alpha)
-                    drawCircle(color = color, radius = (p.size * (1f - t * 0.3f)) * density.coerceAtLeast(0.5f), center = Offset(px, py))
+                    drawCircle(androidx.compose.ui.graphics.lerp(OrangeAccent, Color(0xFFFFAA00), p.colorMix).copy(alpha = alpha), (p.size * (1f - t * 0.3f)) * density.coerceAtLeast(0.5f), Offset(px, py))
                 }
             }
         }
@@ -805,13 +828,13 @@ private data class ParticleData(val angle: Float, val speed: Float, val size: Fl
 @Composable
 private fun PageHowItWorks() {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = "Zero manual tracking", fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VictorMono, textAlign = TextAlign.Center)
+        Text("Zero manual tracking", fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VictorMono, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(32.dp))
-        Text(text = "WE SYNC WITH GOOGLE FIT\nIN THE BACKGROUND", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
+        Text("WE SYNC WITH GOOGLE FIT\nIN THE BACKGROUND", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
         Spacer(modifier = Modifier.height(40.dp))
         OrbitingOrb(modifier = Modifier.fillMaxWidth(0.85f).aspectRatio(1f))
         Spacer(modifier = Modifier.height(40.dp))
-        Text(text = "Your only job is to move. We handle the math and the calendar.", modifier = Modifier.padding(horizontal = 24.dp), textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(0.6f))
+        Text("Your only job is to move. We handle the math and the calendar.", modifier = Modifier.padding(horizontal = 24.dp), textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(0.6f))
     }
 }
 
@@ -820,27 +843,25 @@ private data class OrbitParticle(val latitude: Float, val longitude: Float, val 
 @Composable
 private fun OrbitingOrb(modifier: Modifier = Modifier) {
     val particles = remember {
-        val random = kotlin.random.Random(42)
-        List(180) { OrbitParticle(latitude = (random.nextFloat() - 0.5f) * 160f, longitude = random.nextFloat() * 360f, speed = 0.6f + random.nextFloat() * 0.8f, size = 0.8f + random.nextFloat() * 1.4f, colorMix = random.nextFloat()) }
+        val r = kotlin.random.Random(42)
+        List(180) { OrbitParticle((r.nextFloat() - 0.5f) * 160f, r.nextFloat() * 360f, 0.6f + r.nextFloat() * 0.8f, 0.8f + r.nextFloat() * 1.4f, r.nextFloat()) }
     }
     val infiniteTransition = rememberInfiniteTransition(label = "orbit")
-    val globalRotation by infiniteTransition.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(animation = tween(8000, easing = LinearEasing), repeatMode = RepeatMode.Restart), label = "rotation")
+    val globalRotation by infiniteTransition.animateFloat(0f, 360f, infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart), "rotation")
     Box(modifier = modifier.clip(CircleShape).background(RamsSurface).border(1.dp, RamsBorder, CircleShape), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val centerX = size.width / 2; val centerY = size.height / 2
-            val orbRadius = size.minDimension / 2 * 0.92f
+            val cx = size.width / 2; val cy = size.height / 2; val r = size.minDimension / 2 * 0.92f
             particles.forEach { p ->
                 val lonRad = Math.toRadians((p.longitude + globalRotation * p.speed).toDouble())
                 val latRad = Math.toRadians(p.latitude.toDouble())
                 val x = (kotlin.math.cos(latRad) * kotlin.math.sin(lonRad)).toFloat()
                 val y = (kotlin.math.sin(latRad)).toFloat()
                 val z = (kotlin.math.cos(latRad) * kotlin.math.cos(lonRad)).toFloat()
-                val depthFactor = (z + 1f) / 2f
-                val color = androidx.compose.ui.graphics.lerp(OrangeAccent, Color(0xFFFFAA00), p.colorMix).copy(alpha = 0.3f + depthFactor * 0.7f)
-                drawCircle(color = color, radius = (p.size * (0.5f + depthFactor * 0.5f)) * density, center = Offset(centerX + x * orbRadius, centerY + y * orbRadius))
+                val d = (z + 1f) / 2f
+                drawCircle(androidx.compose.ui.graphics.lerp(OrangeAccent, Color(0xFFFFAA00), p.colorMix).copy(alpha = 0.3f + d * 0.7f), (p.size * (0.5f + d * 0.5f)) * density, Offset(cx + x * r, cy + y * r))
             }
         }
-        Text(text = "AUTO", color = Color.White.copy(0.0f), fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, fontSize = 16.sp, letterSpacing = 2.sp)
+        Text("AUTO", color = Color.White.copy(0.0f), fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, fontSize = 16.sp, letterSpacing = 2.sp)
     }
 }
 
@@ -849,25 +870,25 @@ private fun OrbitingOrb(modifier: Modifier = Modifier) {
 @Composable
 private fun PageNotification() {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = "Silence is earned", modifier = Modifier.padding(horizontal = 24.dp), color = Color.Black.copy(alpha = 0.8f), fontSize = 20.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Text("Silence is earned", modifier = Modifier.padding(horizontal = 24.dp), color = Color.Black.copy(alpha = 0.8f), fontSize = 20.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(32.dp))
-        Text(text = "ZERO SPAM", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
+        Text("ZERO SPAM", textAlign = TextAlign.Center, fontFamily = JetBrainsMono, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = OrangeAccent)
         Spacer(modifier = Modifier.height(32.dp))
-        Text(text = "You only get one notification a day, and only if you haven't walked for the day.", modifier = Modifier.padding(horizontal = 24.dp), textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(0.6f))
+        Text("You only get one notification a day, and only if you haven't walked for the day.", modifier = Modifier.padding(horizontal = 24.dp), textAlign = TextAlign.Center, fontFamily = VictorMono, fontSize = 16.sp, lineHeight = 24.sp, color = Color.Black.copy(0.6f))
         Spacer(modifier = Modifier.height(40.dp))
         RamsCard {
             Column(modifier = Modifier.padding(20.dp)) {
-                ChipLabel(text = "NOTIFICATION", color = OrangeAccent)
+                ChipLabel("NOTIFICATION", OrangeAccent)
                 Spacer(modifier = Modifier.height(20.dp))
                 Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.05f)).border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp)).padding(16.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(OrangeAccent))
-                            Text(text = "LAYZBUG", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            Text("LAYZBUG", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                             Spacer(modifier = Modifier.weight(1f))
-                            Text(text = "18:30", color = Color.White.copy(alpha = 0.3f), fontSize = 10.sp, fontFamily = JetBrainsMono)
+                            Text("18:30", color = Color.White.copy(alpha = 0.3f), fontSize = 10.sp, fontFamily = JetBrainsMono)
                         }
-                        Text(text = "No walk detected today.\nGet your ass moving! 🍑", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, fontFamily = VictorMono, lineHeight = 20.sp)
+                        Text("No walk detected today.\nGet your ass moving! 🍑", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, fontFamily = VictorMono, lineHeight = 20.sp)
                     }
                 }
             }
@@ -879,17 +900,16 @@ private fun PageNotification() {
 
 @Composable
 private fun RamsCard(content: @Composable () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(RamsSurface).border(1.dp, RamsBorder, RoundedCornerShape(24.dp))
-        .drawBehind {
-            val gridSize = 4.dp.toPx()
-            for (x in 0..size.width.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
-            for (y in 0..size.height.toInt() step gridSize.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
-        }) { content() }
+    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(RamsSurface).border(1.dp, RamsBorder, RoundedCornerShape(24.dp)).drawBehind {
+        val g = 4.dp.toPx()
+        for (x in 0..size.width.toInt() step g.toInt()) drawLine(RamsGridLine, Offset(x.toFloat(), 0f), Offset(x.toFloat(), size.height), 1.dp.toPx())
+        for (y in 0..size.height.toInt() step g.toInt()) drawLine(RamsGridLine, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 1.dp.toPx())
+    }) { content() }
 }
 
 @Composable
 private fun ChipLabel(text: String, color: Color) {
     Row(modifier = Modifier.height(32.dp).background(RamsChipBg, CircleShape).border(1.dp, RamsBorder, CircleShape).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(text = text, color = color, fontSize = 12.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text(text, color = color, fontSize = 12.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     }
 }

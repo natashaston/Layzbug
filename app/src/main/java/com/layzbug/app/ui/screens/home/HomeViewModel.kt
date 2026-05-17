@@ -1,10 +1,14 @@
 package com.layzbug.app.ui.screens.home
 
+import android.content.Context
 import android.util.Log
+import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.layzbug.app.FitSyncManager
@@ -13,12 +17,15 @@ import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.repository.WalkRepository
 import com.layzbug.app.domain.StatsValue
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.time.Instant
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
@@ -32,7 +39,8 @@ class HomeViewModel @Inject constructor(
     private val fitSyncManager: FitSyncManager,
     private val walkRepository: WalkRepository,
     private val installationTracker: InstallationTracker,
-    private val authManager: AuthManager
+    private val authManager: AuthManager,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val today            = LocalDate.now()
@@ -53,53 +61,86 @@ class HomeViewModel @Inject constructor(
     private val _isLoggedIn = MutableStateFlow(authManager.isLoggedIn)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+    private val _fitnessConnected = MutableStateFlow<Boolean?>(null)
+    val fitnessConnected: StateFlow<Boolean?> = _fitnessConnected.asStateFlow()
+
+    private val _hcPermissionsGranted = MutableStateFlow(false)
+    val hcPermissionsGranted: StateFlow<Boolean> = _hcPermissionsGranted.asStateFlow()
+
+    // 0f = not started, 1f = complete. Updated per-day during autoSyncSteps.
+    private val _syncProgress = MutableStateFlow(0f)
+    val syncProgress: StateFlow<Float> = _syncProgress.asStateFlow()
+
     private var hasInitialSyncCompleted = installationTracker.hasInitialSyncDone()
+    private val syncMutex = Mutex()
     private val _refreshTrigger = MutableStateFlow(0)
 
     private val requiredPermissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        HealthPermission.getReadPermission(DistanceRecord::class),
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+    )
+
+    private val detectionPermissions = setOf(
+        HealthPermission.getReadPermission(StepsRecord::class),
+        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
         HealthPermission.getReadPermission(DistanceRecord::class)
     )
 
+    private suspend fun checkHcPermissionsDirect(): Boolean {
+        return try {
+            val client  = HealthConnectClient.getOrCreate(context)
+            val granted = client.permissionController.getGrantedPermissions()
+            val hasAll  = detectionPermissions.all { it in granted }
+            Log.d("SyncDebug", "checkHcPermissionsDirect: hasAll=$hasAll grantedCount=${granted.size}")
+            hasAll
+        } catch (e: Exception) {
+            Log.e("SyncDebug", "checkHcPermissionsDirect failed: ${e.message}")
+            false
+        }
+    }
+
     init {
-        Log.d("LayzbugSync", "📅 Sync start date: $startOfYear")
+        Log.d("SyncDebug", "📅 Sync start date: $startOfYear")
 
         viewModelScope.launch {
             delay(500)
 
             if (walkRepository.isSupabaseLoggedIn()) {
-                Log.d("LayzbugSync", "✅ Already logged in, starting Supabase listener")
                 walkRepository.startSupabaseSync()
             }
 
-            // Only attempt initial sync here if permissions are already granted.
-            // On a fresh install, permissions won't be granted yet — OnboardingScreen
-            // requests them and calls onPermissionsGranted() once the user approves.
-            // The old retry loop (10 × 2s polling) is removed because:
-            //   (a) it gave up after 20s if the user was slow on the dialog
-            //   (b) after reinstall, Health Connect revokes permissions and the
-            //       loop always timed out, leaving the app in a broken state
-            if (!hasInitialSyncCompleted && checkPermissions()) {
+            val hasPerms = checkHcPermissionsDirect()
+            Log.d("SyncDebug", "init: hasPerms=$hasPerms hasInitialSyncCompleted=$hasInitialSyncCompleted")
+            _hcPermissionsGranted.value = hasPerms
+
+            if (!hasInitialSyncCompleted && hasPerms) {
+                Log.d("SyncDebug", "init: starting initial sync")
                 startInitialSync()
             }
+
+            checkFitnessConnection()
+        }
+
+        viewModelScope.launch {
+            _hcPermissionsGranted
+                .filter { it }
+                .collect {
+                    Log.d("SyncDebug", "collector fired: hasInitialSyncCompleted=$hasInitialSyncCompleted")
+                    if (!hasInitialSyncCompleted) {
+                        Log.d("SyncDebug", "collector: calling startInitialSync()")
+                        startInitialSync()
+                    }
+                }
         }
     }
 
-    /**
-     * Called by OnboardingScreen immediately after Health Connect permissions
-     * are granted (inside the PermissionController result callback).
-     *
-     * This replaces the old polling retry loop. The onboarding flow chains:
-     *   notif permission → health permission → battery optimisation → onComplete()
-     * OnboardingScreen's onComplete() navigates to home, but the permission result
-     * callback fires BEFORE navigation, so we start sync here while the user is
-     * still seeing the onboarding completion — by the time home renders, sync
-     * has a head start.
-     */
     fun hasInitialSyncCompleted(): Boolean = hasInitialSyncCompleted
+
     fun onPermissionsGranted() {
-        Log.d("LayzbugSync", "✅ Permissions granted callback received")
+        Log.d("SyncDebug", "onPermissionsGranted called")
+        _hcPermissionsGranted.value = true
         if (!hasInitialSyncCompleted) {
             startInitialSync()
         }
@@ -111,6 +152,27 @@ class HomeViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.e("LayzbugSync", "Permission check failed: ${e.message}")
             false
+        }
+    }
+
+    fun checkFitnessConnection() {
+        viewModelScope.launch {
+            val connected = withContext(Dispatchers.IO) {
+                try {
+                    val client   = HealthConnectClient.getOrCreate(context)
+                    val end      = Instant.now()
+                    val start    = end.minus(30, ChronoUnit.DAYS)
+                    val response = client.readRecords(
+                        ReadRecordsRequest(StepsRecord::class, TimeRangeFilter.between(start, end))
+                    )
+                    response.records.isNotEmpty()
+                } catch (e: Exception) {
+                    Log.e("LayzbugSync", "Fitness connection check failed: ${e.message}")
+                    false
+                }
+            }
+            Log.d("SyncDebug", "checkFitnessConnection: connected=$connected")
+            _fitnessConnected.value = connected
         }
     }
 
@@ -155,10 +217,27 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun startInitialSync() {
-        if (hasInitialSyncCompleted) return
+        if (hasInitialSyncCompleted) {
+            Log.d("SyncDebug", "startInitialSync: already done, skipping")
+            return
+        }
+
         viewModelScope.launch {
-            _isSyncing.value = true
+            val acquired = syncMutex.tryLock()
+            if (!acquired) {
+                Log.d("SyncDebug", "startInitialSync: mutex locked — already running")
+                return@launch
+            }
             try {
+                if (hasInitialSyncCompleted) {
+                    Log.d("SyncDebug", "startInitialSync: already done after lock")
+                    return@launch
+                }
+                _syncProgress.value = 0f
+                _isSyncing.value = true
+                Log.d("SyncDebug", "startInitialSync: sync started")
+                checkFitnessConnection()
+
                 withContext(Dispatchers.IO) {
                     if (walkRepository.isSupabaseLoggedIn()) {
                         walkRepository.syncFromSupabase()
@@ -170,18 +249,27 @@ class HomeViewModel @Inject constructor(
                 _refreshTrigger.value++
                 hasInitialSyncCompleted = true
                 installationTracker.markInitialSyncDone()
+                _syncProgress.value = 1f
                 _syncCompleted.value = true
+                Log.d("SyncDebug", "startInitialSync: sync finished successfully")
+                checkFitnessConnection()
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Sync failed: ${e.message}", e)
             } finally {
                 _isSyncing.value = false
+                syncMutex.unlock()
             }
         }
     }
 
     private suspend fun autoSyncSteps() {
-        if (!checkPermissions()) return
+        val hasPerms = checkHcPermissionsDirect()
+        if (!hasPerms) {
+            Log.d("SyncDebug", "autoSyncSteps: no data permissions, skipping")
+            return
+        }
         val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
+        Log.d("SyncDebug", "autoSyncSteps: syncing $daysToSync days")
         for (i in daysToSync downTo 0) {
             val date = startOfYear.plusDays(i)
             try {
@@ -191,20 +279,28 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
             }
+            // Update progress after each day — i goes high→low so completed = daysToSync - i
+            val completed = daysToSync - i
+            _syncProgress.value = if (daysToSync > 0) completed / daysToSync.toFloat() else 1f
         }
     }
 
-    /**
-     * Silent daily re-sync — no toast, no spinner.
-     * Called from HomeScreen on every ON_RESUME.
-     *
-     * - If initial sync hasn't run yet, does nothing (initial sync covers today).
-     * - Today is NEVER marked as done — re-syncs on every ON_RESUME so late
-     *   walks in the same day are never missed.
-     * - Past missed days (app not opened for N days) are back-filled from
-     *   lastDailySyncDate and marked done so they never re-sync again.
-     */
     fun syncTodayIfNeeded() {
+        viewModelScope.launch {
+            val hasPerms = checkHcPermissionsDirect()
+            Log.d("SyncDebug", "syncTodayIfNeeded: hasPerms=$hasPerms _hcPermissionsGranted=${_hcPermissionsGranted.value} hasInitialSyncCompleted=$hasInitialSyncCompleted")
+
+            if (hasPerms && !_hcPermissionsGranted.value) {
+                Log.d("SyncDebug", "syncTodayIfNeeded: permissions newly detected")
+                _hcPermissionsGranted.value = true
+            } else if (hasPerms && !hasInitialSyncCompleted) {
+                Log.d("SyncDebug", "syncTodayIfNeeded: perms known but sync not done — calling startInitialSync")
+                startInitialSync()
+            }
+
+            checkFitnessConnection()
+        }
+
         if (!hasInitialSyncCompleted) return
 
         viewModelScope.launch {
