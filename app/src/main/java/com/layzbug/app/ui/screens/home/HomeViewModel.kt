@@ -12,8 +12,10 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.layzbug.app.FitSyncManager
+import com.layzbug.app.data.GoogleFitBackfillManager
 import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.data.auth.AuthManager
+import com.layzbug.app.data.local.StepDetectorService
 import com.layzbug.app.data.repository.WalkRepository
 import com.layzbug.app.domain.StatsValue
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,6 +42,7 @@ class HomeViewModel @Inject constructor(
     private val walkRepository: WalkRepository,
     private val installationTracker: InstallationTracker,
     private val authManager: AuthManager,
+    private val googleFitBackfillManager: GoogleFitBackfillManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -67,12 +70,16 @@ class HomeViewModel @Inject constructor(
     private val _hcPermissionsGranted = MutableStateFlow(false)
     val hcPermissionsGranted: StateFlow<Boolean> = _hcPermissionsGranted.asStateFlow()
 
-    // 0f = not started, 1f = complete. Updated per-day during autoSyncSteps.
     private val _syncProgress = MutableStateFlow(0f)
     val syncProgress: StateFlow<Float> = _syncProgress.asStateFlow()
 
+    // Exposed so UI can show a "Importing from Google Fit..." message
+    private val _isBackfilling = MutableStateFlow(false)
+    val isBackfilling: StateFlow<Boolean> = _isBackfilling.asStateFlow()
+
     private var hasInitialSyncCompleted = installationTracker.hasInitialSyncDone()
-    private val syncMutex = Mutex()
+    private val syncMutex    = Mutex()
+    private val backfillMutex = Mutex()
     private val _refreshTrigger = MutableStateFlow(0)
 
     private val requiredPermissions = setOf(
@@ -92,9 +99,7 @@ class HomeViewModel @Inject constructor(
         return try {
             val client  = HealthConnectClient.getOrCreate(context)
             val granted = client.permissionController.getGrantedPermissions()
-            val hasAll  = detectionPermissions.all { it in granted }
-            Log.d("SyncDebug", "checkHcPermissionsDirect: hasAll=$hasAll grantedCount=${granted.size}")
-            hasAll
+            detectionPermissions.all { it in granted }
         } catch (e: Exception) {
             Log.e("SyncDebug", "checkHcPermissionsDirect failed: ${e.message}")
             false
@@ -112,24 +117,30 @@ class HomeViewModel @Inject constructor(
             }
 
             val hasPerms = checkHcPermissionsDirect()
-            Log.d("SyncDebug", "init: hasPerms=$hasPerms hasInitialSyncCompleted=$hasInitialSyncCompleted")
             _hcPermissionsGranted.value = hasPerms
 
             if (!hasInitialSyncCompleted && hasPerms) {
-                Log.d("SyncDebug", "init: starting initial sync")
                 startInitialSync()
             }
 
+            // Start step detector if permissions already granted
+            if (hasPerms) {
+                StepDetectorService.start(context)
+            }
+
             checkFitnessConnection()
+
+            // If already signed in and has fitness permission, check if backfill needed
+            if (authManager.isLoggedIn && googleFitBackfillManager.hasFitnessAccess()) {
+                startGoogleFitBackfillIfNeeded()
+            }
         }
 
         viewModelScope.launch {
             _hcPermissionsGranted
                 .filter { it }
                 .collect {
-                    Log.d("SyncDebug", "collector fired: hasInitialSyncCompleted=$hasInitialSyncCompleted")
                     if (!hasInitialSyncCompleted) {
-                        Log.d("SyncDebug", "collector: calling startInitialSync()")
                         startInitialSync()
                     }
                 }
@@ -139,18 +150,18 @@ class HomeViewModel @Inject constructor(
     fun hasInitialSyncCompleted(): Boolean = hasInitialSyncCompleted
 
     fun onPermissionsGranted() {
-        Log.d("SyncDebug", "onPermissionsGranted called")
         _hcPermissionsGranted.value = true
         if (!hasInitialSyncCompleted) {
             startInitialSync()
         }
+        // Start step detector now that permissions are confirmed
+        StepDetectorService.start(context)
     }
 
     suspend fun checkPermissions(): Boolean {
         return try {
             fitSyncManager.hasPermissions(requiredPermissions)
         } catch (e: Exception) {
-            Log.e("LayzbugSync", "Permission check failed: ${e.message}")
             false
         }
     }
@@ -167,11 +178,9 @@ class HomeViewModel @Inject constructor(
                     )
                     response.records.isNotEmpty()
                 } catch (e: Exception) {
-                    Log.e("LayzbugSync", "Fitness connection check failed: ${e.message}")
                     false
                 }
             }
-            Log.d("SyncDebug", "checkFitnessConnection: connected=$connected")
             _fitnessConnected.value = connected
         }
     }
@@ -217,41 +226,34 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun startInitialSync() {
-        if (hasInitialSyncCompleted) {
-            Log.d("SyncDebug", "startInitialSync: already done, skipping")
-            return
-        }
+        if (hasInitialSyncCompleted) return
 
         viewModelScope.launch {
             val acquired = syncMutex.tryLock()
-            if (!acquired) {
-                Log.d("SyncDebug", "startInitialSync: mutex locked — already running")
-                return@launch
-            }
+            if (!acquired) return@launch
+
             try {
-                if (hasInitialSyncCompleted) {
-                    Log.d("SyncDebug", "startInitialSync: already done after lock")
-                    return@launch
-                }
+                if (hasInitialSyncCompleted) return@launch
+
                 _syncProgress.value = 0f
                 _isSyncing.value = true
-                Log.d("SyncDebug", "startInitialSync: sync started")
                 checkFitnessConnection()
 
                 withContext(Dispatchers.IO) {
                     if (walkRepository.isSupabaseLoggedIn()) {
                         walkRepository.syncFromSupabase()
+                        walkRepository.restoreAutoWalksFromSupabase()
                         walkRepository.startSupabaseSync()
                     }
                     withTimeout(120_000) { autoSyncSteps() }
                 }
+
                 delay(1000)
                 _refreshTrigger.value++
                 hasInitialSyncCompleted = true
                 installationTracker.markInitialSyncDone()
                 _syncProgress.value = 1f
                 _syncCompleted.value = true
-                Log.d("SyncDebug", "startInitialSync: sync finished successfully")
                 checkFitnessConnection()
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Sync failed: ${e.message}", e)
@@ -262,24 +264,77 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Runs the Google Fit historical backfill.
+     * - Only runs once per user (checked via Supabase flag)
+     * - Requires fitness permission granted via the new AuthManager scope
+     * - Safe to call multiple times — mutex + Supabase check prevent double-running
+     */
+    fun startGoogleFitBackfillIfNeeded() {
+        viewModelScope.launch {
+            val acquired = backfillMutex.tryLock()
+            if (!acquired) {
+                Log.d("GFitBackfill", "Backfill already running")
+                return@launch
+            }
+
+            try {
+                if (!googleFitBackfillManager.hasFitnessAccess()) {
+                    Log.d("GFitBackfill", "No fitness access — skipping backfill")
+                    return@launch
+                }
+
+                // Check if already done for this user
+                val alreadyDone = walkRepository.hasGoogleFitBackfill().invoke()
+                if (alreadyDone) {
+                    Log.d("GFitBackfill", "Backfill already completed for this user")
+                    return@launch
+                }
+
+                Log.d("GFitBackfill", "🚀 Starting Google Fit historical backfill...")
+                _isBackfilling.value = true
+
+                val sessions = withContext(Dispatchers.IO) {
+                    googleFitBackfillManager.fetchHistoricalWalkingSessions()
+                }
+
+                Log.d("GFitBackfill", "📦 Fetched ${sessions.size} sessions from Google Fit")
+
+                if (sessions.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        walkRepository.updateWalkFromFitBackfill(sessions)
+                    }
+                    _refreshTrigger.value++
+                    Log.d("GFitBackfill", "✅ Google Fit backfill complete")
+                } else {
+                    Log.d("GFitBackfill", "No sessions returned from Google Fit")
+                }
+
+            } catch (e: Exception) {
+                Log.e("GFitBackfill", "❌ Backfill failed: ${e.message}", e)
+            } finally {
+                _isBackfilling.value = false
+                backfillMutex.unlock()
+            }
+        }
+    }
+
     private suspend fun autoSyncSteps() {
         val hasPerms = checkHcPermissionsDirect()
-        if (!hasPerms) {
-            Log.d("SyncDebug", "autoSyncSteps: no data permissions, skipping")
-            return
-        }
+        if (!hasPerms) return
+
         val daysToSync = ChronoUnit.DAYS.between(startOfYear, today)
-        Log.d("SyncDebug", "autoSyncSteps: syncing $daysToSync days")
         for (i in daysToSync downTo 0) {
             val date = startOfYear.plusDays(i)
             try {
                 val result = fitSyncManager.checkDailyWalk(date)
-                walkRepository.updateWalkFromGoogleFit(date, result.isWalked, result.distanceKm, result.totalMinutes)
+                walkRepository.updateWalkFromGoogleFit(
+                    date, result.isWalked, result.distanceKm, result.totalMinutes, result.allSegments
+                )
                 delay(50)
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Error syncing $date: ${e.message}")
             }
-            // Update progress after each day — i goes high→low so completed = daysToSync - i
             val completed = daysToSync - i
             _syncProgress.value = if (daysToSync > 0) completed / daysToSync.toFloat() else 1f
         }
@@ -288,13 +343,10 @@ class HomeViewModel @Inject constructor(
     fun syncTodayIfNeeded() {
         viewModelScope.launch {
             val hasPerms = checkHcPermissionsDirect()
-            Log.d("SyncDebug", "syncTodayIfNeeded: hasPerms=$hasPerms _hcPermissionsGranted=${_hcPermissionsGranted.value} hasInitialSyncCompleted=$hasInitialSyncCompleted")
 
             if (hasPerms && !_hcPermissionsGranted.value) {
-                Log.d("SyncDebug", "syncTodayIfNeeded: permissions newly detected")
                 _hcPermissionsGranted.value = true
             } else if (hasPerms && !hasInitialSyncCompleted) {
-                Log.d("SyncDebug", "syncTodayIfNeeded: perms known but sync not done — calling startInitialSync")
                 startInitialSync()
             }
 
@@ -316,14 +368,11 @@ class HomeViewModel @Inject constructor(
                         val date   = lastSync.plusDays(i)
                         val result = fitSyncManager.checkDailyWalk(date)
                         walkRepository.updateWalkFromGoogleFit(
-                            date, result.isWalked, result.distanceKm, result.totalMinutes
+                            date, result.isWalked, result.distanceKm, result.totalMinutes, result.allSegments
                         )
-                        Log.d("LayzbugSync", "✅ Silent sync: $date ${result.totalMinutes}min walked=${result.isWalked}")
                     }
 
-                    if (daysToSync > 0) {
-                        installationTracker.markDailySyncDone()
-                    }
+                    if (daysToSync > 0) installationTracker.markDailySyncDone()
                 }
                 _refreshTrigger.value++
             } catch (e: Exception) {
@@ -344,8 +393,14 @@ class HomeViewModel @Inject constructor(
             try {
                 walkRepository.syncPendingManualWalks()
                 walkRepository.syncFromSupabase()
+                walkRepository.restoreAutoWalksFromSupabase()
                 walkRepository.startSupabaseSync()
                 _refreshTrigger.value++
+
+                // Trigger Google Fit backfill after sign-in
+                // (user may have just granted fitness scope for the first time)
+                startGoogleFitBackfillIfNeeded()
+
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Post-login sync failed: ${e.message}", e)
             }

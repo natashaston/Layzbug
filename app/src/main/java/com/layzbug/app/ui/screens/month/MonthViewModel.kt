@@ -29,7 +29,8 @@ data class CalendarDayModel(
     val date: LocalDate,
     val walked: Boolean,
     val distanceKm: Double = 0.0,
-    val minutes: Long = 0L
+    val minutes: Long = 0L,
+    val segments: List<com.layzbug.app.WalkSegment> = emptyList() // Connects receipt to UI
 )
 
 @HiltViewModel
@@ -109,7 +110,8 @@ class MonthViewModel @Inject constructor(
                 date       = date,
                 walked     = entity?.isWalked ?: false,
                 distanceKm = entity?.distanceKm ?: 0.0,
-                minutes    = entity?.minutes ?: 0L
+                minutes    = entity?.minutes ?: 0L,
+                segments   = entity?.segments ?: emptyList() // Passes array
             )
         }
     }
@@ -142,8 +144,6 @@ class MonthViewModel @Inject constructor(
 
             val isLoggedIn = authManager.isLoggedIn
             val suppressed = suppressSyncPrompt.value
-            // Only prompt if the user actually changed something manually —
-            // auto-walked days arrive with status == previousStatus so this stays false
             val wasManuallyChanged = status != previousStatus
 
             Log.d("MonthViewModel", "setWalkStatus: status=$status prev=$previousStatus changed=$wasManuallyChanged isLoggedIn=$isLoggedIn suppressed=$suppressed")
@@ -156,7 +156,6 @@ class MonthViewModel @Inject constructor(
         }
     }
 
-    /** Persists the "don't show again" preference to DataStore. */
     fun suppressSyncPromptPermanently() {
         viewModelScope.launch {
             context.dataStore.edit { prefs ->
@@ -166,12 +165,6 @@ class MonthViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Called immediately after sign-in, BEFORE syncAfterSignIn.
-     * Pushes the pending manual walk directly to Supabase so that
-     * syncFromSupabase will pull back the correct state instead of
-     * overwriting with stale data.
-     */
     suspend fun pushManualWalkBeforeSync(date: LocalDate, isWalked: Boolean) {
         walkRepository.updateManualWalk(date, isWalked)
     }

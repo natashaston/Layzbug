@@ -1,34 +1,23 @@
 package com.layzbug.app.data
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.LocalDate
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class InstallationTracker(context: Context) {
+@Singleton
+class InstallationTracker @Inject constructor(
+    @ApplicationContext context: Context
+) {
 
     private val prefs = context.getSharedPreferences("layzbug_install", Context.MODE_PRIVATE)
 
     init {
-        // ── Fresh install detection ───────────────────────────────────
-        // Android Auto Backup restores SharedPreferences across reinstalls.
-        // This causes onboarding_complete=true on a brand new install.
-        //
-        // Detection strategy:
-        // - fresh_install_marker is written alongside onboarding_complete
-        //   when onboarding finishes for the first time
-        // - If onboarding_complete=true but fresh_install_marker is absent,
-        //   it means onboarding_complete was restored by Auto Backup without
-        //   a legitimate prior completion on this device → reset ONLY
-        //   onboarding_complete so the user sees onboarding again
-        // - We do NOT reset initial_sync_done or sync dates — those are
-        //   valid data that should survive reinstalls if the user's HC
-        //   permissions are still intact
-
         val onboardingComplete = prefs.getBoolean("onboarding_complete", false)
         val freshInstallMarker = prefs.getBoolean("fresh_install_marker", false)
 
         if (onboardingComplete && !freshInstallMarker) {
-            // Restored by Auto Backup on a new install — reset only onboarding flag.
-            // Keep sync dates and initial_sync_done intact.
             prefs.edit()
                 .remove("onboarding_complete")
                 .apply()
@@ -46,6 +35,17 @@ class InstallationTracker(context: Context) {
             .putBoolean("fresh_install_marker", true)
             .apply()
     }
+
+    // ── Hardware Walk Tracking ────────────────────────────────────────
+
+    fun setWalkStartTime(timeMs: Long) =
+        prefs.edit().putLong("walk_start_time", timeMs).apply()
+
+    fun getWalkStartTime(): Long =
+        prefs.getLong("walk_start_time", 0L)
+
+    fun clearWalkStartTime() =
+        prefs.edit().remove("walk_start_time").apply()
 
     // ── Sync start date ───────────────────────────────────────────────
 

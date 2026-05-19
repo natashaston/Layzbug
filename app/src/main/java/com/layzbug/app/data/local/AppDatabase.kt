@@ -31,8 +31,15 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
-@Database(entities = [WalkEntity::class], version = 4, exportSchema = false)
-@TypeConverters(Converters::class)
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE walks ADD COLUMN segments TEXT NOT NULL DEFAULT '[]'")
+    }
+}
+
+@Database(entities = [WalkEntity::class], version = 5, exportSchema = false)
+// THE FIX IS HERE: Both converters combined in an array [ ... , ... ]
+@TypeConverters(Converters::class, WalkConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun walkDao(): WalkDao
 }

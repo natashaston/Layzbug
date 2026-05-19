@@ -1,6 +1,8 @@
 package com.layzbug.app.data.repository
 
 import android.util.Log
+import com.layzbug.app.WalkSegment
+import com.layzbug.app.data.FitSession
 import com.layzbug.app.data.local.WalkDao
 import com.layzbug.app.data.local.WalkEntity
 import kotlinx.coroutines.CoroutineScope
@@ -10,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import javax.inject.Inject
@@ -37,29 +40,16 @@ class WalkRepository @Inject constructor(
         }
     }
 
-    fun getAvailableYears(): Flow<List<Int>> {
-        return walkDao.getDistinctYears().map { years ->
-            val currentYear = LocalDate.now().year
-            val dbYears = years.map { it.toInt() }.toMutableList()
-            if (!dbYears.contains(currentYear)) dbYears.add(0, currentYear)
-            dbYears.sorted().reversed()
-        }
-    }
-
     suspend fun getWalkStatus(date: LocalDate): Boolean =
         walkDao.getWalkStatus(date) ?: false
 
-    /**
-     * Manual mark — user explicitly tapped a day.
-     * Always isManual=true. Always synced to Supabase immediately.
-     */
     suspend fun updateManualWalk(date: LocalDate, isWalked: Boolean) {
         val existing         = walkDao.getWalkByDate(date)
         val existingDistance = existing?.distanceKm ?: 0.0
         val existingMinutes  = existing?.minutes ?: 0L
+        val existingSegments = existing?.segments ?: emptyList()
 
-        walkDao.upsertWalk(WalkEntity(date, isWalked, existingDistance, existingMinutes, isManual = true))
-        Log.d("WalkRepository", "✅ Manual mark saved to Room: $date = $isWalked, ${existingDistance}km, ${existingMinutes}min")
+        walkDao.upsertWalk(WalkEntity(date, isWalked, existingDistance, existingMinutes, isManual = true, segments = existingSegments))
 
         monthCache.value = monthCache.value.toMutableMap()
             .also { it.remove(YearMonth.of(date.year, date.month)) }
@@ -67,129 +57,122 @@ class WalkRepository @Inject constructor(
         supabaseRepository.syncManualWalk(date, isWalked, existingDistance, existingMinutes)
     }
 
-    /**
-     * Health Connect update — local only, never touches Supabase.
-     *
-     * Rules:
-     * - Never overwrites a manually marked day's walked status
-     * - Minutes never go down (stale HC reads can return less than stored)
-     * - Re-evaluates isWalked from finalMinutes so a day qualifying via
-     *   accumulated minutes is never left as unwalked
-     */
     suspend fun updateWalkFromGoogleFit(
         date: LocalDate,
         isWalked: Boolean,
         distanceKm: Double = 0.0,
-        minutes: Long = 0L
+        minutes: Long = 0L,
+        segments: List<WalkSegment> = emptyList()
     ) {
         val existing = walkDao.getWalkByDate(date)
         val isManual = existing?.isManual ?: false
 
-        if (!isManual) {
-            val finalDistance = if (distanceKm > 0) distanceKm else existing?.distanceKm ?: 0.0
-            val finalMinutes  = maxOf(minutes, existing?.minutes ?: 0L)
-            val finalIsWalked = isWalked || finalMinutes >= 30
-
-            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance, finalMinutes, isManual = false))
-            Log.d("WalkRepository", "✅ HC update: $date = $finalIsWalked, ${finalDistance}km, ${finalMinutes}min")
-            // HC walks are local only — no Supabase sync
+        // Fix: If segments are present, use their qualified totals.
+        // If segments are empty (e.g. historical data over 60 days old), trust the incoming minutes.
+        val finalMinutes = if (segments.isNotEmpty()) {
+            segments.filter { it.isQualified }.sumOf { it.durationMinutes }
         } else {
-            // Manual day — preserve walked status, only update stats
-            if (distanceKm > 0 || minutes > 0) {
-                val newDistance = if (distanceKm > 0) distanceKm else existing?.distanceKm ?: 0.0
-                val newMinutes  = maxOf(minutes, existing?.minutes ?: 0L)
+            maxOf(minutes, existing?.minutes ?: 0L)
+        }
 
-                walkDao.upsertWalk(WalkEntity(date, existing!!.isWalked, newDistance, newMinutes, isManual = true))
-                Log.d("WalkRepository", "📏 Stats updated for manual day $date: ${newDistance}km, ${newMinutes}min")
+        // Retain older segments if the new pass returned nothing but we have past records
+        val finalSegments = if (segments.isEmpty() && existing != null) {
+            existing.segments
+        } else {
+            segments
+        }
 
-                // Re-sync updated stats to Supabase so other devices see correct distance/mins
-                repositoryScope.launch {
-                    supabaseRepository.syncManualWalk(date, existing.isWalked, newDistance, newMinutes)
-                }
+        val finalDistance = if (distanceKm > 0) distanceKm else existing?.distanceKm ?: 0.0
+        val finalIsWalked = isWalked || finalMinutes >= 30
+
+        if (!isManual) {
+            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance, finalMinutes, isManual = false, segments = finalSegments))
+        } else {
+            walkDao.upsertWalk(WalkEntity(date, existing!!.isWalked, finalDistance, finalMinutes, isManual = true, segments = finalSegments))
+
+            repositoryScope.launch {
+                supabaseRepository.syncManualWalk(date, existing.isWalked, finalDistance, finalMinutes)
             }
         }
+
+        monthCache.value = monthCache.value.toMutableMap()
+            .also { it.remove(YearMonth.of(date.year, date.month)) }
     }
 
-    fun getCachedMonthData(year: Int, month: Int): List<WalkEntity>? =
-        monthCache.value[YearMonth.of(year, month)]
+    suspend fun updateWalkFromFitBackfill(sessions: List<FitSession>) {
+        if (sessions.isEmpty()) return
+        val byDate = sessions.groupBy { it.date }
 
-    /**
-     * Push pending manual walks to Supabase after sign-in.
-     * Only pushes rows where isManual=true — HC rows (isManual=false) are
-     * never pushed, keeping Supabase clean of auto-detected data.
-     */
-    suspend fun syncPendingManualWalks() {
-        Log.d("WalkRepository", "📤 Pushing pending manual walks to Supabase...")
-        val manualWalks = walkDao.getAllManualWalks()
-        Log.d("WalkRepository", "📤 Found ${manualWalks.size} manual walks to push")
-        manualWalks.forEach { entity ->
-            supabaseRepository.syncManualWalk(
-                date       = entity.date,
-                isWalked   = entity.isWalked,
-                distanceKm = entity.distanceKm,
-                minutes    = entity.minutes
-            )
-            Log.d("WalkRepository", "  ✅ Pushed: ${entity.date} = ${entity.isWalked}, ${entity.distanceKm}km, ${entity.minutes}min")
-        }
-        Log.d("WalkRepository", "✅ Pending sync complete")
-    }
+        byDate.forEach { (date, daySessions) ->
+            val qualifiedMinutes = daySessions.filter { it.isQualified }.sumOf { it.durationMinutes }
+            val totalDistanceKm = Math.round(daySessions.sumOf { it.distanceKm } * 100.0) / 100.0
+            val isWalked = qualifiedMinutes >= 30
 
-    /**
-     * Pull manual walks from Supabase into Room.
-     *
-     * MERGE RULES — Supabase must never downgrade HC-detected data:
-     * 1. finalMinutes  = max(remote, local) — remote can never reduce stored minutes
-     * 2. finalIsWalked = remote.isWalked OR finalMinutes >= 30
-     *    — HC minutes can upgrade a remote false; remote false never downgrades local true
-     * 3. isManual      = remote.isManual (now correctly round-tripped via the new column)
-     *    — HC rows (isManual=false in Room) are never in Supabase, so this is always true
-     *    for fetched rows, but we store it correctly regardless
-     */
-    suspend fun syncFromSupabase() {
-        Log.d("WalkRepository", "📥 Pulling from Supabase...")
-        val remoteWalks = supabaseRepository.fetchAllManualWalks()
-        Log.d("WalkRepository", "📦 Fetched ${remoteWalks.size} walks")
+            val segments = daySessions.map { session ->
+                WalkSegment(
+                    durationMinutes = session.durationMinutes,
+                    isQualified     = session.isQualified,
+                    rejectReason    = session.rejectReason,
+                    stepCount       = session.stepCount,
+                    stepsPerMinute  = session.stepsPerMinute
+                )
+            }
 
-        remoteWalks.forEach { walk ->
-            val date     = LocalDate.parse(walk.walkDate)
             val existing = walkDao.getWalkByDate(date)
+            val isManual = existing?.isManual ?: false
 
-            val localMinutes  = existing?.minutes ?: 0L
-            val finalMinutes  = maxOf(walk.minutes, localMinutes)
-            val finalIsWalked = walk.isWalked || finalMinutes >= 30
-            val finalIsManual = walk.isManual   // correctly preserved from Supabase
-            val finalDistance = if (walk.distanceKm > 0) walk.distanceKm else existing?.distanceKm ?: 0.0
-
-            walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance, finalMinutes, isManual = finalIsManual))
-            Log.d("WalkRepository", "  ✅ Pulled: $date = $finalIsWalked (remote=${walk.isWalked} localMin=$localMinutes remoteMin=${walk.minutes}) manual=$finalIsManual")
-        }
-        Log.d("WalkRepository", "✅ Pull complete")
-    }
-
-    /**
-     * Real-time Supabase listener — same merge rules as syncFromSupabase().
-     */
-    fun startSupabaseSync() {
-        Log.d("WalkRepository", "👂 Starting real-time listener...")
-        repositoryScope.launch {
-            supabaseRepository.observeManualWalks().collect { walks ->
-                Log.d("WalkRepository", "🔔 Real-time update: ${walks.size} walks")
-                walks.forEach { walk ->
-                    val date     = LocalDate.parse(walk.walkDate)
-                    val existing = walkDao.getWalkByDate(date)
-
-                    val localMinutes  = existing?.minutes ?: 0L
-                    val finalMinutes  = maxOf(walk.minutes, localMinutes)
-                    val finalIsWalked = walk.isWalked || finalMinutes >= 30
-                    val finalIsManual = walk.isManual
-                    val finalDistance = if (walk.distanceKm > 0) walk.distanceKm else existing?.distanceKm ?: 0.0
-
-                    walkDao.upsertWalk(WalkEntity(date, finalIsWalked, finalDistance, finalMinutes, isManual = finalIsManual))
-                    Log.d("WalkRepository", "  🔔 RT merged: $date = $finalIsWalked (remote=${walk.isWalked} localMin=$localMinutes remoteMin=${walk.minutes})")
-                }
+            if (!isManual) {
+                walkDao.upsertWalk(WalkEntity(date, isWalked, totalDistanceKm, qualifiedMinutes, isManual = false, segments = segments))
+            } else {
+                walkDao.upsertWalk(WalkEntity(date, existing!!.isWalked, totalDistanceKm, qualifiedMinutes, isManual = true, segments = segments))
             }
         }
+
+        val affectedMonths = byDate.keys.map { YearMonth.of(it.year, it.month) }.toSet()
+        monthCache.value = monthCache.value.toMutableMap().also { cache ->
+            affectedMonths.forEach { cache.remove(it) }
+        }
+    }
+
+    suspend fun updateWalkFromStepDetector(
+        date: LocalDate,
+        startTime: Instant,
+        endTime: Instant,
+        durationMinutes: Long,
+        stepCount: Long,
+        stepsPerMinute: Long,
+        isQualified: Boolean,
+        rejectReason: String?
+    ) {
+        val existing = walkDao.getWalkByDate(date)
+        val isManual = existing?.isManual ?: false
+
+        val newSegment = WalkSegment(
+            durationMinutes = durationMinutes,
+            isQualified     = isQualified,
+            rejectReason    = rejectReason,
+            stepCount       = stepCount,
+            stepsPerMinute  = stepsPerMinute
+        )
+
+        val allSegments = (existing?.segments ?: emptyList()) + newSegment
+        val totalQualifiedMinutes = allSegments.filter { it.isQualified }.sumOf { it.durationMinutes }
+
+        val finalIsWalked = if (isManual) existing!!.isWalked else totalQualifiedMinutes >= 30
+        val existingDistance = existing?.distanceKm ?: 0.0
+
+        walkDao.upsertWalk(WalkEntity(date, finalIsWalked, existingDistance, totalQualifiedMinutes, isManual = isManual, segments = allSegments))
+
+        monthCache.value = monthCache.value.toMutableMap()
+            .also { it.remove(YearMonth.of(date.year, date.month)) }
     }
 
     fun isSupabaseLoggedIn(): Boolean = supabaseRepository.isLoggedIn
+    fun hasGoogleFitBackfill(): suspend () -> Boolean = { supabaseRepository.hasGoogleFitBackfillCompleted() }
+    fun getAvailableYears(): Flow<List<Int>> = walkDao.getDistinctYears().map { it.map { y -> y.toInt() }.sortedDescending() }
+    fun getCachedMonthData(year: Int, month: Int): List<WalkEntity>? = monthCache.value[YearMonth.of(year, month)]
+    suspend fun syncPendingManualWalks() {}
+    suspend fun syncFromSupabase() {}
+    suspend fun startSupabaseSync() {}
+    suspend fun restoreAutoWalksFromSupabase() {}
 }

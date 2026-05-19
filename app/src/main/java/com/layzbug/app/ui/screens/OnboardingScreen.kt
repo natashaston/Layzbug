@@ -111,7 +111,6 @@ private fun openManufacturerApp(context: Context, info: ManufacturerInfo) {
             )
             return
         }
-        // Stock Android / Google Fit — open Health Connect directly
         if (info.packageName == "com.google.android.apps.fitness") {
             openHealthConnectSettings(context)
             return
@@ -173,7 +172,6 @@ private suspend fun hasHealthConnectData(context: Context): Boolean {
     }
 }
 
-// Full set — for the launcher dialog. Includes history permission.
 private val fullHealthPermissions = setOf(
     HealthPermission.getReadPermission(StepsRecord::class),
     HealthPermission.getReadPermission(ExerciseSessionRecord::class),
@@ -181,9 +179,6 @@ private val fullHealthPermissions = setOf(
     HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
 )
 
-// Detection subset — for ON_RESUME check.
-// HC settings UI does NOT show PERMISSION_READ_HEALTH_DATA_HISTORY as a toggle,
-// so we only check the 3 data permissions when detecting settings-based grants.
 private val detectionHealthPermissions = setOf(
     HealthPermission.getReadPermission(StepsRecord::class),
     HealthPermission.getReadPermission(ExerciseSessionRecord::class),
@@ -335,10 +330,12 @@ private fun PagePermissions(
     val mfr     = remember { detectManufacturer() }
 
     var notifState      by remember { mutableStateOf(PermRowState.IDLE) }
+    var activityState   by remember { mutableStateOf(PermRowState.IDLE) }
     var healthState     by remember { mutableStateOf(PermRowState.IDLE) }
     var batteryState    by remember { mutableStateOf(PermRowState.IDLE) }
     var mfrState        by remember { mutableStateOf(PermRowState.IDLE) }
     var dataState       by remember { mutableStateOf(PermRowState.IDLE) }
+
     var lastTrigger     by remember { mutableIntStateOf(0) }
     var notifAttempted  by remember { mutableStateOf(false) }
     var showSkipWarningSheet by remember { mutableStateOf(false) }
@@ -353,6 +350,12 @@ private fun PagePermissions(
         notifState = if (granted) PermRowState.GRANTED else PermRowState.FAILED
     }
 
+    val activityLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        activityState = if (granted) PermRowState.GRANTED else PermRowState.FAILED
+    }
+
     val healthLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { granted ->
@@ -363,7 +366,6 @@ private fun PagePermissions(
         } else {
             val elapsed = System.currentTimeMillis() - healthLaunchTime
             if (elapsed < 500L) {
-                // Dialog silently suppressed — redirect to HC settings
                 Log.d("Onboarding", "HC dialog suppressed (${elapsed}ms) — opening HC settings")
                 openHealthConnectSettings(context)
             } else {
@@ -406,8 +408,15 @@ private fun PagePermissions(
         }
     }
 
+    val provideActivity: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            activityLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+        } else {
+            activityState = PermRowState.GRANTED
+        }
+    }
+
     val provideHealth: () -> Unit = {
-        // Launch with FULL permission set including history
         healthLaunchTime = System.currentTimeMillis()
         healthLauncher.launch(fullHealthPermissions)
     }
@@ -448,18 +457,20 @@ private fun PagePermissions(
 
     LaunchedEffect(Unit) {
         val notifOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-                    PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         else true
         if (notifOk) { notifState = PermRowState.GRANTED; notifAttempted = true }
 
+        val activityOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+        else true
+        if (activityOk) activityState = PermRowState.GRANTED
+
         val batteryOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-            (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-                .isIgnoringBatteryOptimizations(context.packageName)
+            (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(context.packageName)
         else true
         if (batteryOk) batteryState = PermRowState.GRANTED
 
-        // Use detection subset (3 perms) for initial check
         val hcOk = isHealthConnectGranted(context, detectionHealthPermissions)
         if (hcOk) healthState = PermRowState.GRANTED
         if (hcOk) {
@@ -477,52 +488,40 @@ private fun PagePermissions(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch {
-                    // Row 1: Notifications
                     val notifOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-                                PackageManager.PERMISSION_GRANTED
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                     else true
                     if (notifOk) { notifState = PermRowState.GRANTED; notifAttempted = true }
 
-                    // Row 2: Health Connect — use DETECTION subset (3 perms)
-                    // so that settings-based grants are correctly detected
+                    val activityOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+                    else true
+                    if (activityOk) activityState = PermRowState.GRANTED
+
                     val hcOk = isHealthConnectGranted(context, detectionHealthPermissions)
                     if (hcOk && healthState != PermRowState.GRANTED) {
                         healthState = PermRowState.GRANTED
                         onPermissionsGranted()
                     }
 
-                    // Row 3: Battery
                     val batteryOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                        (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-                            .isIgnoringBatteryOptimizations(context.packageName)
+                        (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(context.packageName)
                     else true
                     if (batteryOk) batteryState = PermRowState.GRANTED
 
-                    // Rows 4 & 5: Manufacturer app + data check
                     if (mfrState == PermRowState.LOADING) {
                         dataState = PermRowState.LOADING
                         delay(1500)
                         val hasData = hasHealthConnectData(context)
-                        if (hasData) {
-                            mfrState  = PermRowState.GRANTED
-                            dataState = PermRowState.GRANTED
-                        } else {
-                            mfrState  = PermRowState.FAILED
-                            dataState = PermRowState.FAILED
-                        }
+                        if (hasData) { mfrState = PermRowState.GRANTED; dataState = PermRowState.GRANTED }
+                        else { mfrState = PermRowState.FAILED; dataState = PermRowState.FAILED }
                     }
 
-                    // If HC is now granted but data hasn't been checked yet
                     if (hcOk && dataState == PermRowState.IDLE) {
                         dataState = PermRowState.LOADING
                         val hasData = hasHealthConnectData(context)
-                        if (hasData) {
-                            mfrState  = PermRowState.GRANTED
-                            dataState = PermRowState.GRANTED
-                        } else {
-                            dataState = PermRowState.FAILED
-                        }
+                        if (hasData) { mfrState = PermRowState.GRANTED; dataState = PermRowState.GRANTED }
+                        else { dataState = PermRowState.FAILED }
                     }
                 }
             }
@@ -531,11 +530,10 @@ private fun PagePermissions(
         onDispose { activity?.lifecycle?.removeObserver(observer) }
     }
 
-    val allGranted = notifState == PermRowState.GRANTED && healthState == PermRowState.GRANTED &&
+    val allGranted = notifState == PermRowState.GRANTED && activityState == PermRowState.GRANTED && healthState == PermRowState.GRANTED &&
             batteryState == PermRowState.GRANTED && dataState == PermRowState.GRANTED
-    val mandatoryMissing = healthState != PermRowState.GRANTED ||
-            mfrState    != PermRowState.GRANTED ||
-            dataState   != PermRowState.GRANTED
+    val mandatoryMissing = healthState != PermRowState.GRANTED || activityState != PermRowState.GRANTED ||
+            mfrState != PermRowState.GRANTED || dataState != PermRowState.GRANTED
 
     LaunchedEffect(allGranted, notifAttempted) {
         when {
@@ -574,11 +572,12 @@ private fun PagePermissions(
         )
         Spacer(Modifier.height(40.dp))
 
-        PermissionRow(label = "Notifications",        state = notifState,   onProvide = if (notifState   == PermRowState.IDLE) provideNotif   else null, onRetry = if (notifState   == PermRowState.FAILED) provideNotif   else null)
-        PermissionRow(label = "Health Connect",       state = healthState,  onProvide = if (healthState  == PermRowState.IDLE) provideHealth  else null, onRetry = if (healthState  == PermRowState.FAILED) provideHealth  else null)
-        PermissionRow(label = "Battery unrestricted", state = batteryState, onProvide = if (batteryState == PermRowState.IDLE) provideBattery else null, onRetry = if (batteryState == PermRowState.FAILED) provideBattery else null)
-        PermissionRow(label = mfr.label,              state = mfrState,     onProvide = if (mfrState     == PermRowState.IDLE) provideMfr     else null, onRetry = if (mfrState     == PermRowState.FAILED) provideMfr     else null)
-        PermissionRow(label = "Fitness data detected",state = dataState,    onProvide = null,                                                            onRetry = if (dataState    == PermRowState.FAILED) retryData      else null)
+        PermissionRow(label = "Notifications",        state = notifState,   onProvide = if (notifState    == PermRowState.IDLE) provideNotif    else null, onRetry = if (notifState    == PermRowState.FAILED) provideNotif    else null)
+        PermissionRow(label = "Physical Activity",    state = activityState,onProvide = if (activityState == PermRowState.IDLE) provideActivity else null, onRetry = if (activityState == PermRowState.FAILED) provideActivity else null)
+        PermissionRow(label = "Health Connect",       state = healthState,  onProvide = if (healthState   == PermRowState.IDLE) provideHealth   else null, onRetry = if (healthState   == PermRowState.FAILED) provideHealth   else null)
+        PermissionRow(label = "Battery unrestricted", state = batteryState, onProvide = if (batteryState  == PermRowState.IDLE) provideBattery  else null, onRetry = if (batteryState  == PermRowState.FAILED) provideBattery  else null)
+        PermissionRow(label = mfr.label,              state = mfrState,     onProvide = if (mfrState      == PermRowState.IDLE) provideMfr      else null, onRetry = if (mfrState      == PermRowState.FAILED) provideMfr      else null)
+        PermissionRow(label = "Fitness data detected",state = dataState,    onProvide = null,                                                              onRetry = if (dataState     == PermRowState.FAILED) retryData       else null)
     }
 
     if (showSkipWarningSheet) {
@@ -589,9 +588,10 @@ private fun PagePermissions(
                 scope.launch {
                     delay(300)
                     when {
-                        healthState != PermRowState.GRANTED -> provideHealth()
-                        mfrState    != PermRowState.GRANTED -> provideMfr()
-                        else                                -> retryData()
+                        activityState != PermRowState.GRANTED -> provideActivity()
+                        healthState   != PermRowState.GRANTED -> provideHealth()
+                        mfrState      != PermRowState.GRANTED -> provideMfr()
+                        else                                  -> retryData()
                     }
                 }
             },
@@ -628,7 +628,7 @@ private fun SkipWarningSheet(
             Spacer(Modifier.height(32.dp))
             Text("Walk tracking won't work", color = headlineColor, fontSize = 18.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
             Spacer(Modifier.height(20.dp))
-            Text("Health Connect, $mfrLabel, and fitness data detection are required for Layzbug to automatically track your walks.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+            Text("Health Connect, Physical Activity sensors, and $mfrLabel are required for Layzbug to automatically track your walks.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
             Spacer(Modifier.height(20.dp))
             Text("Proceeding without these means your walks will not be tracked automatically. You can still manually mark days as walked.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
             Spacer(Modifier.height(32.dp))

@@ -5,27 +5,41 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.request.AggregateGroupByDurationRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
-import java.time.Duration
+import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
 
+@Serializable
+data class WalkSegment(
+    val durationMinutes: Long,
+    val isQualified: Boolean,
+    val rejectReason: String? = null,
+    val stepCount: Long = 0L,
+    val stepsPerMinute: Long = 0L
+)
+
 data class DailyWalkResult(
     val isWalked: Boolean,
     val distanceKm: Double,
     val totalMinutes: Long = 0,
-    val sessionCount: Int = 0
+    val sessionCount: Int = 0,
+    val allSegments: List<WalkSegment> = emptyList()
 )
 
 @Singleton
 class FitSyncManager @Inject constructor(
     private val healthConnectClient: HealthConnectClient
 ) {
+    private val DAILY_GOAL_MINUTES = 30L
+    private val MIN_SESSION_MINS = 5L
+    private val MIN_SESSION_SPM = 55L
+    private val MAX_GAP_TOLERANCE_MS = 2 * 60 * 1000L // 2 minutes
+
     suspend fun hasPermissions(permissions: Set<String>): Boolean {
         return try {
             val granted = healthConnectClient.permissionController.getGrantedPermissions()
@@ -36,59 +50,26 @@ class FitSyncManager @Inject constructor(
         }
     }
 
-    /**
-     * Walk detection rules:
-     * - Each walk segment must be >= 5 minutes
-     * - Sum of qualified segments must reach >= 30 minutes
-     *
-     * Strategy:
-     * 1. Read exercise sessions. Compute qualified session minutes (segments >= 5 min).
-     * 2. If sessions already qualify (>= 30 min), done.
-     * 3. If sessions don't qualify — whether empty OR present but too short/noisy —
-     *    ALSO run step inference and take the better of the two readings.
-     *
-     * FIX: Previously step inference was gated on `sessionResponse.records.isEmpty()`.
-     * A single noise session (e.g. a 3-min warm-up) would block inference entirely,
-     * leaving a valid 40-min walk marked as unwalked.
-     *
-     * We take maxOf(session, inferred) rather than summing — both sensors describe
-     * the same physical walk, so adding them would double-count.
-     */
     suspend fun checkDailyWalk(date: LocalDate): DailyWalkResult {
-        try {
+        return try {
             val zoneId    = ZoneId.systemDefault()
             val startTime = date.atStartOfDay(zoneId).toInstant()
             val endTime   = date.plusDays(1).atStartOfDay(zoneId).toInstant()
             val timeRange = TimeRangeFilter.between(startTime, endTime)
 
-            // ── Strategy 1: Exercise sessions ───────────────────────────────
-            val sessionResponse = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType      = ExerciseSessionRecord::class,
-                    timeRangeFilter = timeRange
-                )
-            )
-
-            val sessionDurations        = sessionResponse.records.map { session ->
-                Duration.between(session.startTime, session.endTime).toMinutes()
-            }
-            val qualifiedSessionMinutes = sessionDurations.filter { it >= 5 }.sum()
-
-            // ── Strategy 2: Step inference — supplement when sessions don't qualify ──
-            // Runs whenever qualifiedSessionMinutes < 30, including when sessions
-            // exist but are all noise (< 5 min each). Previously only ran when
-            // records were completely empty — that was the bug.
-            val qualifiedInferredMinutes: Long = if (qualifiedSessionMinutes < 30) {
-                inferWalksFromSteps(timeRange).filter { it >= 5 }.sum()
-            } else {
-                0L
+            val segments = readExerciseSessions(timeRange).let { exerciseSegments ->
+                if (exerciseSegments.isNotEmpty()) {
+                    Log.d("FitSync", "📊 $date: using ExerciseSessionRecord (${exerciseSegments.size} sessions)")
+                    exerciseSegments
+                } else {
+                    Log.d("FitSync", "📊 $date: parsing raw record timelines")
+                    inferWalksFromRawSteps(timeRange)
+                }
             }
 
-            // Take the better reading — don't add (same walk, two sensors)
-            val totalQualifiedMinutes = maxOf(qualifiedSessionMinutes, qualifiedInferredMinutes)
-            val isWalked              = totalQualifiedMinutes >= 30
+            val totalQualifiedMinutes = segments.filter { it.isQualified }.sumOf { it.durationMinutes }
+            val isWalked = totalQualifiedMinutes >= DAILY_GOAL_MINUTES
 
-            // ── Distance ────────────────────────────────────────────────────
             val distanceKm = try {
                 val aggregateResponse = healthConnectClient.aggregate(
                     AggregateRequest(
@@ -96,72 +77,153 @@ class FitSyncManager @Inject constructor(
                         timeRangeFilter = timeRange
                     )
                 )
-                val distanceMeters = aggregateResponse[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0
-                Math.round(distanceMeters / 1000.0 * 100.0) / 100.0
+                val meters = aggregateResponse[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0
+                Math.round(meters / 1000.0 * 100.0) / 100.0
             } catch (e: Exception) {
                 Log.e("FitSync", "Error reading distance for $date: ${e.message}")
                 0.0
             }
 
-            Log.d(
-                "FitSync",
-                "📊 $date: sessions=$sessionDurations " +
-                        "qualifiedSession=${qualifiedSessionMinutes}min " +
-                        "qualifiedInferred=${qualifiedInferredMinutes}min " +
-                        "total=${totalQualifiedMinutes}min walked=$isWalked ${distanceKm}km"
-            )
-
-            return DailyWalkResult(
+            DailyWalkResult(
                 isWalked     = isWalked,
                 distanceKm   = distanceKm,
                 totalMinutes = totalQualifiedMinutes,
-                sessionCount = sessionResponse.records.size
+                sessionCount = segments.count { it.isQualified },
+                allSegments  = segments
             )
         } catch (e: Exception) {
             Log.e("FitSync", "Error for $date: ${e.message}", e)
-            return DailyWalkResult(isWalked = false, distanceKm = 0.0)
+            DailyWalkResult(isWalked = false, distanceKm = 0.0)
         }
     }
 
-    /**
-     * Infer walking segments from step data.
-     * Reads steps in 1-minute buckets; treats >= 40 steps/min as walking.
-     * Returns duration (in minutes) of each continuous walking segment.
-     * No gap tolerance — any minute below 40 steps ends the segment.
-     */
-    private suspend fun inferWalksFromSteps(timeRange: TimeRangeFilter): List<Long> {
+    private suspend fun readExerciseSessions(timeRange: TimeRangeFilter): List<WalkSegment> {
         return try {
-            val response = healthConnectClient.aggregateGroupByDuration(
-                AggregateGroupByDurationRequest(
-                    metrics         = setOf(StepsRecord.COUNT_TOTAL),
-                    timeRangeFilter = timeRange,
-                    timeRangeSlicer = Duration.ofMinutes(1)
+            val response = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType      = ExerciseSessionRecord::class,
+                    timeRangeFilter = timeRange
                 )
             )
 
-            val segments              = mutableListOf<Long>()
-            var currentSegmentMinutes = 0L
-
-            for (bucket in response) {
-                val stepsInMinute = bucket.result[StepsRecord.COUNT_TOTAL] ?: 0L
-                if (stepsInMinute >= 40) {
-                    currentSegmentMinutes++
-                } else {
-                    if (currentSegmentMinutes > 0) segments.add(currentSegmentMinutes)
-                    currentSegmentMinutes = 0
-                }
+            val exerciseRecords = response.records.filter { record ->
+                record.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_WALKING || record.exerciseType == 80
             }
-            if (currentSegmentMinutes > 0) segments.add(currentSegmentMinutes)
 
-            segments
+            if (exerciseRecords.isEmpty()) return emptyList()
+
+            val stepsResponse = healthConnectClient.readRecords(
+                ReadRecordsRequest(recordType = StepsRecord::class, timeRangeFilter = timeRange)
+            )
+            val stepRecords = stepsResponse.records
+
+            exerciseRecords.map { record ->
+                val startMs = record.startTime.toEpochMilli()
+                val endMs = record.endTime.toEpochMilli()
+                val durationMins = (endMs - startMs) / 60_000L
+
+                val sessionSteps = stepRecords.filter {
+                    it.startTime.toEpochMilli() >= startMs && it.endTime.toEpochMilli() <= endMs
+                }.sumOf { it.count }
+
+                val stepsPerMin = if (durationMins > 0) sessionSteps / durationMins else 0L
+
+                val (isQualified, rejectReason) = when {
+                    durationMins < MIN_SESSION_MINS -> false to "< $MIN_SESSION_MINS mins"
+                    stepsPerMin < MIN_SESSION_SPM -> false to "Low step density ($stepsPerMin spm)"
+                    else -> true to null
+                }
+
+                WalkSegment(
+                    durationMinutes = durationMins,
+                    isQualified = isQualified,
+                    rejectReason = rejectReason,
+                    stepCount = sessionSteps,
+                    stepsPerMinute = stepsPerMin
+                )
+            }
         } catch (e: Exception) {
-            Log.e("FitSync", "Error inferring walks from steps: ${e.message}")
+            Log.e("FitSync", "Error reading ExerciseSessionRecords: ${e.message}")
             emptyList()
         }
     }
 
-    @Deprecated("Use checkDailyWalk() instead")
-    suspend fun checkWalkingGoal(date: LocalDate): Boolean {
-        return checkDailyWalk(date).isWalked
+    private suspend fun inferWalksFromRawSteps(timeRange: TimeRangeFilter): List<WalkSegment> {
+        return try {
+            val response = healthConnectClient.readRecords(
+                ReadRecordsRequest(recordType = StepsRecord::class, timeRangeFilter = timeRange)
+            )
+
+            val records = response.records.sortedBy { it.startTime }
+            if (records.isEmpty()) return emptyList()
+
+            val segments = mutableListOf<WalkSegment>()
+
+            var activeSessionStart = 0L
+            var activeSessionEnd = 0L
+            var activeSessionSteps = 0L
+
+            fun flushActiveSession() {
+                if (activeSessionStart == 0L) return
+                val durationMins = (activeSessionEnd - activeSessionStart) / 60_000L
+
+                if (durationMins > 0) {
+                    val stepsPerMin = activeSessionSteps / durationMins
+                    val segment = when {
+                        durationMins < MIN_SESSION_MINS -> WalkSegment(durationMins, false, "< $MIN_SESSION_MINS mins", activeSessionSteps, stepsPerMin)
+                        stepsPerMin < MIN_SESSION_SPM -> WalkSegment(durationMins, false, "Low step density ($stepsPerMin spm)", activeSessionSteps, stepsPerMin)
+                        else -> WalkSegment(durationMins, true, null, activeSessionSteps, stepsPerMin)
+                    }
+                    segments.add(segment)
+                }
+
+                activeSessionStart = 0L
+                activeSessionEnd = 0L
+                activeSessionSteps = 0L
+            }
+
+            for (record in records) {
+                val recordStart = record.startTime.toEpochMilli()
+                val recordEnd = record.endTime.toEpochMilli()
+                val recordDurationMins = maxOf(1L, (recordEnd - recordStart) / 60_000L)
+                val recordSpm = record.count / recordDurationMins
+
+                // High-velocity filter: If the individual piece of data is too slow,
+                // it cannot be part of an intentional walking session.
+                if (recordSpm < MIN_SESSION_SPM) {
+                    // Close any active session right before this slow block
+                    flushActiveSession()
+                    continue
+                }
+
+                if (activeSessionStart == 0L) {
+                    // Start a fresh intentional session
+                    activeSessionStart = recordStart
+                    activeSessionEnd = recordEnd
+                    activeSessionSteps = record.count
+                } else {
+                    // We are in an active session. Check if this next fast chunk is close enough.
+                    if ((recordStart - activeSessionEnd) <= MAX_GAP_TOLERANCE_MS) {
+                        activeSessionEnd = maxOf(activeSessionEnd, recordEnd)
+                        activeSessionSteps += record.count
+                    } else {
+                        // Too much time passed since the last fast segment. Close it.
+                        flushActiveSession()
+                        // Start a new session with this fast chunk
+                        activeSessionStart = recordStart
+                        activeSessionEnd = recordEnd
+                        activeSessionSteps = record.count
+                    }
+                }
+            }
+
+            // Flush out the remaining active session if one exists at the end of the day
+            flushActiveSession()
+
+            segments
+        } catch (e: Exception) {
+            Log.e("FitSync", "Error in velocity step parsing: ${e.message}")
+            emptyList()
+        }
     }
 }

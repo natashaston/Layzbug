@@ -103,6 +103,10 @@ dependencies {
     // Google Sign-In
     implementation(libs.play.services.auth)
 
+    // Google Play Services Location (Activity Recognition)
+    implementation("com.google.android.gms:play-services-location:21.2.0")
+    implementation("com.google.android.gms:play-services-fitness:21.1.0")
+
     // Coroutines support for Google Play Services Tasks
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }

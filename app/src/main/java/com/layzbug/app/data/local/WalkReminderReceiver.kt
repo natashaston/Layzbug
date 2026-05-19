@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 import javax.inject.Inject
+import com.layzbug.app.data.local.StepDetectorService
 
 /**
  * Fires at the scheduled time via AlarmManager.
@@ -53,10 +54,11 @@ class WalkReminderReceiver : BroadcastReceiver() {
                 }
             }
 
-            // Reschedule after device reboot
             Intent.ACTION_BOOT_COMPLETED -> {
                 Log.d("WalkReminderReceiver", "📱 Boot completed — rescheduling alarm")
                 AlarmScheduler.rescheduleFromPrefs(context)
+                // Restart step detector after reboot
+                StepDetectorService.start(context)
             }
         }
     }
