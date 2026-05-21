@@ -79,16 +79,12 @@ import java.time.format.TextStyle
 import java.util.Locale
 import javax.inject.Inject
 
-// ─── FONTS ──────────────────────────────────────────────────────────
-
 private val VictorMono = FontFamily(
     Font(R.font.victor_mono_regular, FontWeight.Normal),
     Font(R.font.victor_mono_medium, FontWeight.Medium),
     Font(R.font.victor_mono_bold, FontWeight.Bold)
 )
 private val JetBrainsMono = FontFamily(Font(R.font.jetbrains_mono_regular, FontWeight.Normal))
-
-// ─── PALETTE ────────────────────────────────────────────────────────
 
 private val RamsSurface   = Color(0xFF151619)
 private val RamsBorder    = Color.White.copy(alpha = 0.05f)
@@ -99,8 +95,6 @@ private val GreenAccent   = Color(0xFF00FF66)
 private val BodyTextMuted = Color.Black.copy(alpha = 0.6f)
 private val HeadlineColor = Color(0xFF151619)
 
-// ─── MANUFACTURER DETECTION ──────────────────────────────────────────
-
 private data class MfrInfo(val label: String, val packageName: String, val playStoreId: String? = null)
 
 private fun detectMfr(): MfrInfo = when (Build.MANUFACTURER.lowercase().trim()) {
@@ -108,7 +102,7 @@ private fun detectMfr(): MfrInfo = when (Build.MANUFACTURER.lowercase().trim()) 
     "xiaomi", "redmi", "poco"   -> MfrInfo("Mi Fitness",      "com.xiaomi.wearable")
     "huawei", "honor"           -> MfrInfo("Huawei Health",   "", playStoreId = "nl.appyhapps.healthsync")
     "oneplus", "oppo", "realme" -> MfrInfo("OHealth",         "com.oppo.health")
-    else                        -> MfrInfo("Google Fit",      "com.google.android.apps.fitness")
+    else                        -> MfrInfo("Health Connect",  "")
 }
 
 private fun openMfrApp(context: Context, info: MfrInfo) {
@@ -117,7 +111,7 @@ private fun openMfrApp(context: Context, info: MfrInfo) {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${info.playStoreId}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return
         }
-        if (info.packageName == "com.google.android.apps.fitness") {
+        if (info.packageName.isEmpty()) {
             try {
                 context.startActivity(Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             } catch (e: Exception) {
@@ -130,8 +124,6 @@ private fun openMfrApp(context: Context, info: MfrInfo) {
         else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${info.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (e: Exception) { }
 }
-
-// ─── MAIN NAV HOST ───────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -148,7 +140,6 @@ fun LayzbugNavHost(
     val fitnessConnected   by homeViewModel.fitnessConnected.collectAsState()
     val isSyncing          by homeViewModel.isSyncing.collectAsState()
     val syncCompleted      by homeViewModel.syncCompleted.collectAsState()
-    // Shared with HomeScreen — same dismissed state across both surfaces
     val syncToastDismissed by homeViewModel.syncToastDismissed.collectAsState()
     val syncProgress       by homeViewModel.syncProgress.collectAsState()
 
@@ -191,11 +182,6 @@ fun LayzbugNavHost(
         }
     }
 
-    // ── ON_RESUME observer at NavHost level ──────────────────────────
-    // Fires whenever the app returns to foreground regardless of whether
-    // the drawer is open or HomeScreen is visible. Handles the case where
-    // the user opens the drawer, goes to HC settings, and returns — sync
-    // triggers immediately in the drawer without needing to close it.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -227,7 +213,6 @@ fun LayzbugNavHost(
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // ── ABOUT ────────────────────────────────────────
                     SectionLabel("ABOUT")
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(modifier = Modifier.fillMaxWidth().clickable { showHowItWorks = true }.padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -237,7 +222,6 @@ fun LayzbugNavHost(
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // ── NOTIFICATIONS ────────────────────────────────
                     SectionLabel("NOTIFICATIONS")
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -248,10 +232,18 @@ fun LayzbugNavHost(
 
                     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Daily walk reminder", fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, color = BodyTextMuted)
+                        val switchColors = SwitchDefaults.colors(
+                            checkedThumbColor = GreenAccent,
+                            checkedTrackColor = RamsSurface,
+                            checkedBorderColor = Color.Transparent,
+                            uncheckedThumbColor = Color(0xFF888888),
+                            uncheckedTrackColor = Color(0xFFE0E0E0),
+                            uncheckedBorderColor = Color(0xFFBBBBBB)
+                        )
                         Switch(
                             checked         = notifEnabled,
                             onCheckedChange = { enabled -> scope.launch { notificationPrefs.setEnabled(enabled, notifHour) } },
-                            colors          = SwitchDefaults.colors(checkedThumbColor = GreenAccent, checkedTrackColor = RamsSurface, checkedBorderColor = Color.Transparent, uncheckedThumbColor = Color(0xFF888888), uncheckedTrackColor = Color(0xFFE0E0E0), uncheckedBorderColor = Color(0xFFBBBBBB))
+                            colors          = switchColors
                         )
                     }
 
@@ -271,13 +263,9 @@ fun LayzbugNavHost(
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // ── DATA SOURCE ──────────────────────────────────
                     SectionLabel("DATA SOURCE")
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Sync toast — shared state with home screen via ViewModel.
-                    // Blue while syncing (no dismiss). Green when done (dismiss = toast only).
-                    // Dismissed state is shared so home + drawer are always in sync.
                     AnimatedVisibility(
                         visible = (isSyncing || syncCompleted) && !syncToastDismissed,
                         enter   = expandVertically(tween(300)) + fadeIn(tween(300)),
@@ -296,9 +284,6 @@ fun LayzbugNavHost(
                         }
                     }
 
-                    // Red not-connected toast — only when not syncing, sync hasn't completed
-                    // this session, and user hasn't dismissed the sync toast.
-                    // syncToastDismissed guards against red reappearing after green is dismissed.
                     AnimatedVisibility(
                         visible = !isSyncing && !syncCompleted && !syncToastDismissed && fitnessConnected == false,
                         enter   = expandVertically(tween(300)) + fadeIn(tween(300)),
@@ -314,7 +299,6 @@ fun LayzbugNavHost(
                         }
                     }
 
-                    // Data source row — always tappable, opens sheet
                     Row(
                         modifier          = Modifier.fillMaxWidth().clickable { showDataSourceSheet = true }.padding(horizontal = 24.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -326,7 +310,6 @@ fun LayzbugNavHost(
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // ── ACCOUNT ──────────────────────────────────────
                     SectionLabel("ACCOUNT")
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -442,7 +425,6 @@ fun LayzbugNavHost(
         }
     }
 
-    // ── Sheets ───────────────────────────────────────────────────────
     if (showDataSourceSheet) {
         DataSourceSheet(mfrLabel = mfr.label, connected = fitnessConnected, onClose = { showDataSourceSheet = false }, onConnect = { showDataSourceSheet = false; openMfrApp(context, mfr) })
     }
@@ -463,11 +445,6 @@ fun LayzbugNavHost(
         SyncStatusInfoSheet(isSyncing = isSyncing, onClose = { showSyncInfoPopup = false })
     }
 }
-
-// ─── SYNC PROGRESS TOAST ─────────────────────────────────────────────
-// Identical to HomeScreen's SyncProgressToast.
-// Dismiss calls homeViewModel.dismissSyncToast() — shared state,
-// so home and drawer are always in sync. Drawer is NOT closed on dismiss.
 
 @Composable
 private fun SyncProgressToast(
@@ -532,16 +509,13 @@ private fun SyncProgressToast(
     }
 }
 
-// ─── SYNC STATUS INFO SHEET ──────────────────────────────────────────
-
 @Composable
 private fun SyncStatusInfoSheet(isSyncing: Boolean, onClose: () -> Unit) {
     val bodyTextMuted = Color.Black.copy(alpha = 0.6f)
-    val SyncBlue      = Color(0xFF1A56A0)
 
     com.layzbug.app.ui.components.LayzbugBottomSheet(onClose = onClose, lightBackground = true) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 40.dp)) {
-            val chipBg   = if (isSyncing) SyncBlue else Color(0xFF1A6E35)
+            val chipBg   = if (isSyncing) Color(0xFF1A56A0) else Color(0xFF1A6E35)
             val chipText = if (isSyncing) "SYNCING IN PROGRESS" else "SYNC COMPLETE"
             val dotColor = if (isSyncing) Color(0xFF90C8FF) else GreenAccent
 
@@ -553,19 +527,17 @@ private fun SyncStatusInfoSheet(isSyncing: Boolean, onClose: () -> Unit) {
             Text(if (isSyncing) "Fetching your walk history" else "Your walk history is ready", color = HeadlineColor, fontSize = 18.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
             Spacer(Modifier.height(20.dp))
             if (isSyncing) {
-                Text("Layzbug is reading your walk history from your phone. This can take a moment as we go through up to a year of data.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+                Text("Layzbug is reading your walk history from your phone's storage. This can take a moment as we parse through up to a year of timeline information.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
                 Spacer(Modifier.height(20.dp))
                 Text("You can close this alert once the sync is complete. You can use the app normally in the meantime.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
             } else {
                 Text("All your walk history has been fetched from your phone and is ready to view.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
                 Spacer(Modifier.height(20.dp))
-                Text("From here on, Layzbug will sync any new walks automatically in the background.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+                Text("From here on, Layzbug will track and evaluate any new walks automatically in the background.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
             }
         }
     }
 }
-
-// ─── DATA SOURCE DRAWER TOAST ────────────────────────────────────────
 
 @Composable
 private fun DataSourceDrawerToast(mfrLabel: String, onSyncTap: () -> Unit, onInfo: () -> Unit) {
@@ -583,8 +555,6 @@ private fun DataSourceDrawerToast(mfrLabel: String, onSyncTap: () -> Unit, onInf
     }
 }
 
-// ─── DATA SOURCE SHEET ───────────────────────────────────────────────
-
 @Composable
 private fun DataSourceSheet(mfrLabel: String, connected: Boolean?, onClose: () -> Unit, onConnect: () -> Unit) {
     val GoalGreenText = Color(0xFF1A6E35)
@@ -597,34 +567,36 @@ private fun DataSourceSheet(mfrLabel: String, connected: Boolean?, onClose: () -
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 40.dp).verticalScroll(rememberScrollState())) {
             Row(modifier = Modifier.height(28.dp).background(if (isConnected) GoalGreenText else ToastRed, CircleShape).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(if (isConnected) GreenAccent else Color(0xFFFF6B6B)))
-                Text(if (isConnected) "DATA SOURCE CONNECTED" else "DATA SOURCE NOT CONNECTED", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontFamily = VictorMono, letterSpacing = 1.1.sp)
+                Text(if (isConnected) "SYSTEM TIMELINE CONNECTED" else "SYSTEM TIMELINE NOT CONNECTED", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontFamily = VictorMono, letterSpacing = 1.1.sp)
             }
             Spacer(Modifier.height(32.dp))
             Text(if (isConnected) "$mfrLabel is connected" else "Connect $mfrLabel to Layzbug", color = headlineColor, fontSize = 18.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
             Spacer(Modifier.height(20.dp))
             if (isConnected) {
-                Text("Layzbug is reading your steps and exercise sessions from Health Connect.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+                Text("Layzbug is reading your timeline data directly from your phone's low-power sensor engine via Health Connect.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
                 Spacer(Modifier.height(20.dp))
-                Text("Any walk of 30 minutes or more — made up of continuous segments of at least 5 minutes each — will be automatically marked on your calendar.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+                Text("Any walk of 30 minutes or more — made up of continuous segments of at least 5 minutes each — will be automatically evaluated and marked on your calendar.", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
             } else {
-                Text("Layzbug reads walk data through Health Connect. Follow these steps to connect:", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
+                Text("Layzbug reads walk logs cleanly through the system layer. Follow these steps to connect your device:", color = bodyTextMuted, fontSize = 15.sp, fontFamily = VictorMono, fontWeight = FontWeight.Medium, lineHeight = 24.sp)
                 Spacer(Modifier.height(20.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                     InstructionStep(number = "1", text = "Open Health Connect\n→ App access\n→ Layzbug App\n→ Tap on Allow all", green = GoalGreenText)
                     InstructionStep(number = "2", text = "On the same screen\n→ Additional access\n→ Enable Access past data", green = GoalGreenText)
-                    InstructionStep(number = "3", text = "Go back to App access\n→ Find $mfrLabel\n→ Tap Allow all", green = GoalGreenText)
-                    InstructionStep(number = "4", text = "Return to Layzbug App", green = GoalGreenText)
+                    if (mfrLabel != "Health Connect") {
+                        InstructionStep(number = "3", text = "Go back to App access\n→ Find $mfrLabel\n→ Tap Allow all", green = GoalGreenText)
+                        InstructionStep(number = "4", text = "Return to Layzbug App", green = GoalGreenText)
+                    } else {
+                        InstructionStep(number = "3", text = "Return to Layzbug App", green = GoalGreenText)
+                    }
                 }
                 Spacer(Modifier.height(28.dp))
                 Row(modifier = Modifier.fillMaxWidth().height(56.dp).clip(CircleShape).background(RamsSurface).border(1.dp, Color.White.copy(alpha = 0.05f), CircleShape).clickable { onConnect() }.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                    Text("Connect $mfrLabel", color = OrangeAccent, fontSize = 14.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
+                    Text(if (mfrLabel == "Health Connect") "Open System Settings" else "Connect $mfrLabel", color = OrangeAccent, fontSize = 14.sp, fontFamily = VictorMono, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
                 }
             }
         }
     }
 }
-
-// ─── INSTRUCTION STEP ────────────────────────────────────────────────
 
 @Composable
 private fun InstructionStep(number: String, text: String, green: Color) {
@@ -636,14 +608,10 @@ private fun InstructionStep(number: String, text: String, green: Color) {
     }
 }
 
-// ─── SECTION LABEL ───────────────────────────────────────────────────
-
 @Composable
 private fun SectionLabel(text: String) {
     Text(text = text, fontSize = 10.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = Color.Black.copy(alpha = 0.35f), modifier = Modifier.padding(horizontal = 24.dp))
 }
-
-// ─── DRAWER SYNC INFO SHEET ──────────────────────────────────────────
 
 @Composable
 private fun DrawerSyncInfoSheet(onClose: () -> Unit, onSignInClick: () -> Unit) {
@@ -669,8 +637,6 @@ private fun DrawerSyncInfoSheet(onClose: () -> Unit, onSignInClick: () -> Unit) 
     }
 }
 
-// ─── HOUR PICKER DIALOG ──────────────────────────────────────────────
-
 @Composable
 private fun HourPickerDialog(currentHour: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
     var selectedMinutes by remember { mutableIntStateOf(currentHour.coerceIn(360, 1320)) }
@@ -694,8 +660,6 @@ private fun HourPickerDialog(currentHour: Int, onConfirm: (Int) -> Unit, onDismi
         dismissButton = { Box(modifier = Modifier.clip(CircleShape).border(1.dp, Color.Black.copy(alpha = 0.1f), CircleShape).clickable { onDismiss() }.padding(horizontal = 28.dp, vertical = 14.dp), contentAlignment = Alignment.Center) { Text("CANCEL", color = BodyTextMuted, fontSize = 13.sp, fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp) } }
     )
 }
-
-// ─── DRAWER TOASTS & SHEETS ──────────────────────────────────────────
 
 @Composable
 private fun DrawerLoggedOutToast(onDismiss: () -> Unit, onInfo: () -> Unit) {
@@ -759,8 +723,6 @@ private fun DrawerSignedInInfoSheet(onClose: () -> Unit) {
     }
 }
 
-// ─── GOOGLE G LOGO ───────────────────────────────────────────────────
-
 @Composable
 private fun GoogleGLogoDrawer(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
@@ -774,8 +736,6 @@ private fun GoogleGLogoDrawer(modifier: Modifier = Modifier) {
         drawLine(color = googleBlue, start = Offset(s / 2, s / 2), end = Offset(s - strokeWidth, s / 2), strokeWidth = strokeWidth, cap = StrokeCap.Square)
     }
 }
-
-// ─── NAV VIEWMODEL ───────────────────────────────────────────────────
 
 @dagger.hilt.android.lifecycle.HiltViewModel
 class LayzbugNavViewModel @Inject constructor(

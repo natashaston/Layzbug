@@ -36,7 +36,6 @@ class FitSyncManager @Inject constructor(
     private val healthConnectClient: HealthConnectClient
 ) {
     private val DAILY_GOAL_MINUTES = 30L
-    private val MIN_SESSION_MINS = 5L
     private val MIN_SESSION_SPM = 55L
     private val MAX_GAP_TOLERANCE_MS = 2 * 60 * 1000L // 2 minutes
 
@@ -115,7 +114,17 @@ class FitSyncManager @Inject constructor(
             val stepsResponse = healthConnectClient.readRecords(
                 ReadRecordsRequest(recordType = StepsRecord::class, timeRangeFilter = timeRange)
             )
-            val stepRecords = stepsResponse.records
+            // Deduplicate step records from multiple HC sources before summing
+            val rawStepRecords = stepsResponse.records.sortedBy { it.startTime }
+            val stepRecords = mutableListOf<StepsRecord>().also { deduped ->
+                for (candidate in rawStepRecords) {
+                    val isDuplicate = deduped.any { existing ->
+                        (candidate.startTime == existing.startTime && candidate.count == existing.count) ||
+                                (candidate.startTime >= existing.startTime && candidate.endTime <= existing.endTime)
+                    }
+                    if (!isDuplicate) deduped.add(candidate)
+                }
+            }
 
             exerciseRecords.map { record ->
                 val startMs = record.startTime.toEpochMilli()
@@ -129,7 +138,6 @@ class FitSyncManager @Inject constructor(
                 val stepsPerMin = if (durationMins > 0) sessionSteps / durationMins else 0L
 
                 val (isQualified, rejectReason) = when {
-                    durationMins < MIN_SESSION_MINS -> false to "< $MIN_SESSION_MINS mins"
                     stepsPerMin < MIN_SESSION_SPM -> false to "Low step density ($stepsPerMin spm)"
                     else -> true to null
                 }
@@ -154,8 +162,38 @@ class FitSyncManager @Inject constructor(
                 ReadRecordsRequest(recordType = StepsRecord::class, timeRangeFilter = timeRange)
             )
 
-            val records = response.records.sortedBy { it.startTime }
-            if (records.isEmpty()) return emptyList()
+            val rawRecords = response.records.sortedBy { it.startTime }
+
+            if (rawRecords.isEmpty()) return emptyList()
+
+            // Deduplicate StepsRecords from multiple HC sources writing to the same time windows.
+            // Health Connect returns records from all registered sources (Google Fit, OEM sensor hub,
+            // Android health platform) without deduplication. Patterns handled:
+            //   1. Exact duplicate — same start time + same step count (different source, identical data)
+            //   2. Fully contained — candidate sits entirely inside an existing record's window
+            //   3. Same end time, later start — partial overlap from a second source starting mid-walk
+            //   4. Existing fully inside candidate — candidate is larger, replace existing
+            // Legitimate back-to-back walks with touching timestamps are NOT discarded.
+            val records = mutableListOf<StepsRecord>()
+            for (candidate in rawRecords) {
+                var isDuplicate = false
+                var replaceIndex = -1
+                for ((index, existing) in records.withIndex()) {
+                    val exactDup = candidate.startTime == existing.startTime && candidate.count == existing.count
+                    val candInExist = candidate.startTime >= existing.startTime && candidate.endTime <= existing.endTime
+                    val sameEndLaterStart = candidate.endTime == existing.endTime && candidate.startTime > existing.startTime
+                    val existInCand = existing.startTime >= candidate.startTime && existing.endTime <= candidate.endTime
+                    when {
+                        exactDup || candInExist || sameEndLaterStart -> { isDuplicate = true; break }
+                        existInCand -> { isDuplicate = true; replaceIndex = index; break }
+                    }
+                }
+                when {
+                    !isDuplicate -> records.add(candidate)
+                    replaceIndex >= 0 -> records[replaceIndex] = candidate
+                    // else: discard — candidate is the smaller/duplicate record
+                }
+            }
 
             val segments = mutableListOf<WalkSegment>()
 
@@ -169,8 +207,10 @@ class FitSyncManager @Inject constructor(
 
                 if (durationMins > 0) {
                     val stepsPerMin = activeSessionSteps / durationMins
+                    // MIN_SESSION_MINS is intentionally NOT checked here.
+                    // Short qualifying bursts (e.g. 2–4 min) should contribute to the
+                    // daily 30min total — the daily goal is the noise gate, not session length.
                     val segment = when {
-                        durationMins < MIN_SESSION_MINS -> WalkSegment(durationMins, false, "< $MIN_SESSION_MINS mins", activeSessionSteps, stepsPerMin)
                         stepsPerMin < MIN_SESSION_SPM -> WalkSegment(durationMins, false, "Low step density ($stepsPerMin spm)", activeSessionSteps, stepsPerMin)
                         else -> WalkSegment(durationMins, true, null, activeSessionSteps, stepsPerMin)
                     }
