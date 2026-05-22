@@ -12,7 +12,6 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.layzbug.app.FitSyncManager
-import com.layzbug.app.data.GoogleFitBackfillManager
 import com.layzbug.app.data.InstallationTracker
 import com.layzbug.app.data.auth.AuthManager
 import com.layzbug.app.data.local.StepDetectorService
@@ -42,7 +41,6 @@ class HomeViewModel @Inject constructor(
     private val walkRepository: WalkRepository,
     private val installationTracker: InstallationTracker,
     private val authManager: AuthManager,
-    private val googleFitBackfillManager: GoogleFitBackfillManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -73,13 +71,8 @@ class HomeViewModel @Inject constructor(
     private val _syncProgress = MutableStateFlow(0f)
     val syncProgress: StateFlow<Float> = _syncProgress.asStateFlow()
 
-    // Exposed so UI can show a "Importing from Google Fit..." message
-    private val _isBackfilling = MutableStateFlow(false)
-    val isBackfilling: StateFlow<Boolean> = _isBackfilling.asStateFlow()
-
     private var hasInitialSyncCompleted = installationTracker.hasInitialSyncDone()
     private val syncMutex    = Mutex()
-    private val backfillMutex = Mutex()
     private val _refreshTrigger = MutableStateFlow(0)
 
     private val requiredPermissions = setOf(
@@ -129,11 +122,6 @@ class HomeViewModel @Inject constructor(
             }
 
             checkFitnessConnection()
-
-            // If already signed in and has fitness permission, check if backfill needed
-            if (authManager.isLoggedIn && googleFitBackfillManager.hasFitnessAccess()) {
-                startGoogleFitBackfillIfNeeded()
-            }
         }
 
         viewModelScope.launch {
@@ -264,61 +252,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Runs the Google Fit historical backfill.
-     * - Only runs once per user (checked via Supabase flag)
-     * - Requires fitness permission granted via the new AuthManager scope
-     * - Safe to call multiple times — mutex + Supabase check prevent double-running
-     */
-    fun startGoogleFitBackfillIfNeeded() {
-        viewModelScope.launch {
-            val acquired = backfillMutex.tryLock()
-            if (!acquired) {
-                Log.d("GFitBackfill", "Backfill already running")
-                return@launch
-            }
-
-            try {
-                if (!googleFitBackfillManager.hasFitnessAccess()) {
-                    Log.d("GFitBackfill", "No fitness access — skipping backfill")
-                    return@launch
-                }
-
-                // Check if already done for this user
-                val alreadyDone = walkRepository.hasGoogleFitBackfill().invoke()
-                if (alreadyDone) {
-                    Log.d("GFitBackfill", "Backfill already completed for this user")
-                    return@launch
-                }
-
-                Log.d("GFitBackfill", "🚀 Starting Google Fit historical backfill...")
-                _isBackfilling.value = true
-
-                val sessions = withContext(Dispatchers.IO) {
-                    googleFitBackfillManager.fetchHistoricalWalkingSessions()
-                }
-
-                Log.d("GFitBackfill", "📦 Fetched ${sessions.size} sessions from Google Fit")
-
-                if (sessions.isNotEmpty()) {
-                    withContext(Dispatchers.IO) {
-                        walkRepository.updateWalkFromFitBackfill(sessions)
-                    }
-                    _refreshTrigger.value++
-                    Log.d("GFitBackfill", "✅ Google Fit backfill complete")
-                } else {
-                    Log.d("GFitBackfill", "No sessions returned from Google Fit")
-                }
-
-            } catch (e: Exception) {
-                Log.e("GFitBackfill", "❌ Backfill failed: ${e.message}", e)
-            } finally {
-                _isBackfilling.value = false
-                backfillMutex.unlock()
-            }
-        }
-    }
-
     private suspend fun autoSyncSteps() {
         val hasPerms = checkHcPermissionsDirect()
         if (!hasPerms) return
@@ -396,11 +329,6 @@ class HomeViewModel @Inject constructor(
                 walkRepository.restoreAutoWalksFromSupabase()
                 walkRepository.startSupabaseSync()
                 _refreshTrigger.value++
-
-                // Trigger Google Fit backfill after sign-in
-                // (user may have just granted fitness scope for the first time)
-                startGoogleFitBackfillIfNeeded()
-
             } catch (e: Exception) {
                 Log.e("LayzbugSync", "Post-login sync failed: ${e.message}", e)
             }

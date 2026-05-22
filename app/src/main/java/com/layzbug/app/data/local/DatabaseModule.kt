@@ -40,10 +40,6 @@ object DatabaseModule {
         return database.walkDao()
     }
 
-    // AuthManager, InstallationTracker, GoogleFitBackfillManager all use
-    // @Inject constructor + @Singleton — Hilt provides them automatically.
-    // No @Provides needed for any of them.
-
     @Provides
     @Singleton
     fun provideWalkRepository(
