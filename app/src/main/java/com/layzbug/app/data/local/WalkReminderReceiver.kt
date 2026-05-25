@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.layzbug.app.data.local.StepDetectorService
 import com.layzbug.app.data.local.WalkDao
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -12,7 +13,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 import javax.inject.Inject
-import com.layzbug.app.data.local.StepDetectorService
 
 /**
  * Fires at the scheduled time via AlarmManager.

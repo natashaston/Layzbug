@@ -16,10 +16,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.layzbug.app.MainActivity
 import com.layzbug.app.R
-import com.layzbug.app.WalkSegment
-import com.layzbug.app.data.repository.AutoWalkSession
 import com.layzbug.app.data.repository.WalkRepository
-import com.layzbug.app.data.repository.SupabaseRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +32,6 @@ import javax.inject.Inject
 class StepDetectorService : Service(), SensorEventListener {
 
     @Inject lateinit var walkRepository: WalkRepository
-    @Inject lateinit var supabaseRepository: SupabaseRepository
     @Inject lateinit var activityTransitionManager: ActivityTransitionManager
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -174,7 +170,7 @@ class StepDetectorService : Service(), SensorEventListener {
         Log.d(TAG, "🏁 Session complete: $date | ${durationMinutes}min | ${steps}steps | ${stepsPerMinute}spm | qualified=$isQualified")
 
         serviceScope.launch {
-            saveSession(
+            walkRepository.updateWalkFromStepDetector(
                 date            = date,
                 startTime       = start,
                 endTime         = end,
@@ -184,44 +180,8 @@ class StepDetectorService : Service(), SensorEventListener {
                 isQualified     = isQualified,
                 rejectReason    = rejectReason
             )
+            Log.d(TAG, "✅ Session saved for $date")
         }
-    }
-
-    private suspend fun saveSession(
-        date: LocalDate,
-        startTime: Instant,
-        endTime: Instant,
-        durationMinutes: Long,
-        stepCount: Long,
-        stepsPerMinute: Long,
-        isQualified: Boolean,
-        rejectReason: String?
-    ) {
-        walkRepository.updateWalkFromStepDetector(
-            date            = date,
-            startTime       = startTime,
-            endTime         = endTime,
-            durationMinutes = durationMinutes,
-            stepCount       = stepCount,
-            stepsPerMinute  = stepsPerMinute,
-            isQualified     = isQualified,
-            rejectReason    = rejectReason
-        )
-
-        val autoSession = AutoWalkSession(
-            userId          = "",
-            walkDate        = date.toString(),
-            startTime       = startTime.toString(),
-            endTime         = endTime.toString(),
-            durationMinutes = durationMinutes,
-            stepCount       = stepCount,
-            stepsPerMinute  = stepsPerMinute,
-            isQualified     = isQualified,
-            rejectReason    = rejectReason,
-            source          = "step_detector"
-        )
-        supabaseRepository.upsertAutoWalkSessions(date, listOf(autoSession))
-        Log.d(TAG, "✅ Local and remote sync tasks complete for processed session.")
     }
 
     private fun createNotificationChannel() {

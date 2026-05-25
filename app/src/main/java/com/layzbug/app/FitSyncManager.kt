@@ -3,7 +3,6 @@ package com.layzbug.app
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.DistanceRecord
-import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -35,9 +34,22 @@ data class DailyWalkResult(
 class FitSyncManager @Inject constructor(
     private val healthConnectClient: HealthConnectClient
 ) {
+    // A day is walked when the sum of all qualified segments reaches this.
     private val DAILY_GOAL_MINUTES = 30L
+
+    // Minimum step cadence for a record to be considered intentional walking.
+    // Filters out slow shuffling, standing fidgets, and household movement.
     private val MIN_SESSION_SPM = 55L
-    private val MAX_GAP_TOLERANCE_MS = 2 * 60 * 1000L // 2 minutes
+
+    // Maximum gap between two fast-step records before they are treated as
+    // separate sessions. 60 seconds covers a traffic light or brief pause
+    // without stitching unrelated walks together.
+    private val MAX_GAP_TOLERANCE_MS = 60 * 1000L
+
+    // Minimum duration for a merged session to qualify.
+    // Filters out elevator rides, short bursts between shelves, bathroom trips —
+    // anything that isn't sustained intentional walking.
+    private val MIN_SEGMENT_MINUTES = 5L
 
     suspend fun hasPermissions(permissions: Set<String>): Boolean {
         return try {
@@ -56,15 +68,7 @@ class FitSyncManager @Inject constructor(
             val endTime   = date.plusDays(1).atStartOfDay(zoneId).toInstant()
             val timeRange = TimeRangeFilter.between(startTime, endTime)
 
-            val segments = readExerciseSessions(timeRange).let { exerciseSegments ->
-                if (exerciseSegments.isNotEmpty()) {
-                    Log.d("FitSync", "📊 $date: using ExerciseSessionRecord (${exerciseSegments.size} sessions)")
-                    exerciseSegments
-                } else {
-                    Log.d("FitSync", "📊 $date: parsing raw record timelines")
-                    inferWalksFromRawSteps(timeRange)
-                }
-            }
+            val segments  = inferWalksFromRawSteps(timeRange)
 
             val totalQualifiedMinutes = segments.filter { it.isQualified }.sumOf { it.durationMinutes }
             val isWalked = totalQualifiedMinutes >= DAILY_GOAL_MINUTES
@@ -96,66 +100,6 @@ class FitSyncManager @Inject constructor(
         }
     }
 
-    private suspend fun readExerciseSessions(timeRange: TimeRangeFilter): List<WalkSegment> {
-        return try {
-            val response = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType      = ExerciseSessionRecord::class,
-                    timeRangeFilter = timeRange
-                )
-            )
-
-            val exerciseRecords = response.records.filter { record ->
-                record.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_WALKING || record.exerciseType == 80
-            }
-
-            if (exerciseRecords.isEmpty()) return emptyList()
-
-            val stepsResponse = healthConnectClient.readRecords(
-                ReadRecordsRequest(recordType = StepsRecord::class, timeRangeFilter = timeRange)
-            )
-            // Deduplicate step records from multiple HC sources before summing
-            val rawStepRecords = stepsResponse.records.sortedBy { it.startTime }
-            val stepRecords = mutableListOf<StepsRecord>().also { deduped ->
-                for (candidate in rawStepRecords) {
-                    val isDuplicate = deduped.any { existing ->
-                        (candidate.startTime == existing.startTime && candidate.count == existing.count) ||
-                                (candidate.startTime >= existing.startTime && candidate.endTime <= existing.endTime)
-                    }
-                    if (!isDuplicate) deduped.add(candidate)
-                }
-            }
-
-            exerciseRecords.map { record ->
-                val startMs = record.startTime.toEpochMilli()
-                val endMs = record.endTime.toEpochMilli()
-                val durationMins = (endMs - startMs) / 60_000L
-
-                val sessionSteps = stepRecords.filter {
-                    it.startTime.toEpochMilli() >= startMs && it.endTime.toEpochMilli() <= endMs
-                }.sumOf { it.count }
-
-                val stepsPerMin = if (durationMins > 0) sessionSteps / durationMins else 0L
-
-                val (isQualified, rejectReason) = when {
-                    stepsPerMin < MIN_SESSION_SPM -> false to "Low step density ($stepsPerMin spm)"
-                    else -> true to null
-                }
-
-                WalkSegment(
-                    durationMinutes = durationMins,
-                    isQualified = isQualified,
-                    rejectReason = rejectReason,
-                    stepCount = sessionSteps,
-                    stepsPerMinute = stepsPerMin
-                )
-            }
-        } catch (e: Exception) {
-            Log.e("FitSync", "Error reading ExerciseSessionRecords: ${e.message}")
-            emptyList()
-        }
-    }
-
     private suspend fun inferWalksFromRawSteps(timeRange: TimeRangeFilter): List<WalkSegment> {
         return try {
             val response = healthConnectClient.readRecords(
@@ -169,100 +113,90 @@ class FitSyncManager @Inject constructor(
             // Deduplicate StepsRecords from multiple HC sources writing to the same time windows.
             // Health Connect returns records from all registered sources (Google Fit, OEM sensor hub,
             // Android health platform) without deduplication. Patterns handled:
-            //   1. Exact duplicate — same start time + same step count (different source, identical data)
+            //   1. Exact duplicate — same start time + same step count
             //   2. Fully contained — candidate sits entirely inside an existing record's window
-            //   3. Same end time, later start — partial overlap from a second source starting mid-walk
+            //   3. Same end time, later start — partial overlap from a second source
             //   4. Existing fully inside candidate — candidate is larger, replace existing
-            // Legitimate back-to-back walks with touching timestamps are NOT discarded.
             val records = mutableListOf<StepsRecord>()
             for (candidate in rawRecords) {
-                var isDuplicate = false
+                var isDuplicate  = false
                 var replaceIndex = -1
                 for ((index, existing) in records.withIndex()) {
-                    val exactDup = candidate.startTime == existing.startTime && candidate.count == existing.count
-                    val candInExist = candidate.startTime >= existing.startTime && candidate.endTime <= existing.endTime
+                    val exactDup          = candidate.startTime == existing.startTime && candidate.count == existing.count
+                    val candInExist       = candidate.startTime >= existing.startTime && candidate.endTime <= existing.endTime
                     val sameEndLaterStart = candidate.endTime == existing.endTime && candidate.startTime > existing.startTime
-                    val existInCand = existing.startTime >= candidate.startTime && existing.endTime <= candidate.endTime
+                    val existInCand       = existing.startTime >= candidate.startTime && existing.endTime <= candidate.endTime
                     when {
                         exactDup || candInExist || sameEndLaterStart -> { isDuplicate = true; break }
                         existInCand -> { isDuplicate = true; replaceIndex = index; break }
                     }
                 }
                 when {
-                    !isDuplicate -> records.add(candidate)
+                    !isDuplicate      -> records.add(candidate)
                     replaceIndex >= 0 -> records[replaceIndex] = candidate
-                    // else: discard — candidate is the smaller/duplicate record
                 }
             }
 
             val segments = mutableListOf<WalkSegment>()
-
             var activeSessionStart = 0L
-            var activeSessionEnd = 0L
+            var activeSessionEnd   = 0L
             var activeSessionSteps = 0L
 
             fun flushActiveSession() {
                 if (activeSessionStart == 0L) return
                 val durationMins = (activeSessionEnd - activeSessionStart) / 60_000L
-
                 if (durationMins > 0) {
                     val stepsPerMin = activeSessionSteps / durationMins
-                    // MIN_SESSION_MINS is intentionally NOT checked here.
-                    // Short qualifying bursts (e.g. 2–4 min) should contribute to the
-                    // daily 30min total — the daily goal is the noise gate, not session length.
-                    val segment = when {
-                        stepsPerMin < MIN_SESSION_SPM -> WalkSegment(durationMins, false, "Low step density ($stepsPerMin spm)", activeSessionSteps, stepsPerMin)
-                        else -> WalkSegment(durationMins, true, null, activeSessionSteps, stepsPerMin)
-                    }
-                    segments.add(segment)
+                    segments.add(when {
+                        durationMins < MIN_SEGMENT_MINUTES ->
+                            WalkSegment(durationMins, false, "Too short (${durationMins}min < ${MIN_SEGMENT_MINUTES}min)", activeSessionSteps, stepsPerMin)
+                        stepsPerMin < MIN_SESSION_SPM ->
+                            WalkSegment(durationMins, false, "Low step density ($stepsPerMin spm)", activeSessionSteps, stepsPerMin)
+                        else ->
+                            WalkSegment(durationMins, true, null, activeSessionSteps, stepsPerMin)
+                    })
                 }
-
                 activeSessionStart = 0L
-                activeSessionEnd = 0L
+                activeSessionEnd   = 0L
                 activeSessionSteps = 0L
             }
 
             for (record in records) {
-                val recordStart = record.startTime.toEpochMilli()
-                val recordEnd = record.endTime.toEpochMilli()
-                val recordDurationMins = maxOf(1L, (recordEnd - recordStart) / 60_000L)
-                val recordSpm = record.count / recordDurationMins
+                val recordStart   = record.startTime.toEpochMilli()
+                val recordEnd     = record.endTime.toEpochMilli()
+                val recordDurMins = maxOf(1L, (recordEnd - recordStart) / 60_000L)
+                val recordSpm     = record.count / recordDurMins
 
-                // High-velocity filter: If the individual piece of data is too slow,
-                // it cannot be part of an intentional walking session.
+                // Pre-filter: if this individual record is too slow to be walking,
+                // flush any active session and skip it.
                 if (recordSpm < MIN_SESSION_SPM) {
-                    // Close any active session right before this slow block
                     flushActiveSession()
                     continue
                 }
 
                 if (activeSessionStart == 0L) {
-                    // Start a fresh intentional session
                     activeSessionStart = recordStart
-                    activeSessionEnd = recordEnd
+                    activeSessionEnd   = recordEnd
                     activeSessionSteps = record.count
                 } else {
-                    // We are in an active session. Check if this next fast chunk is close enough.
-                    if ((recordStart - activeSessionEnd) <= MAX_GAP_TOLERANCE_MS) {
-                        activeSessionEnd = maxOf(activeSessionEnd, recordEnd)
+                    val gapMs = recordStart - activeSessionEnd
+                    if (gapMs <= MAX_GAP_TOLERANCE_MS) {
+                        activeSessionEnd    = maxOf(activeSessionEnd, recordEnd)
                         activeSessionSteps += record.count
                     } else {
-                        // Too much time passed since the last fast segment. Close it.
                         flushActiveSession()
-                        // Start a new session with this fast chunk
                         activeSessionStart = recordStart
-                        activeSessionEnd = recordEnd
+                        activeSessionEnd   = recordEnd
                         activeSessionSteps = record.count
                     }
                 }
             }
 
-            // Flush out the remaining active session if one exists at the end of the day
             flushActiveSession()
-
             segments
+
         } catch (e: Exception) {
-            Log.e("FitSync", "Error in velocity step parsing: ${e.message}")
+            Log.e("FitSync", "Error in raw step inference: ${e.message}")
             emptyList()
         }
     }

@@ -158,7 +158,6 @@ class WalkRepository @Inject constructor(
             val date     = LocalDate.parse(walk.walkDate)
             val existing = walkDao.getWalkByDate(date)
 
-            // Don't overwrite a local manual walk with cloud data
             if (existing?.isManual == true) return@forEach
 
             walkDao.upsertWalk(
@@ -200,53 +199,6 @@ class WalkRepository @Inject constructor(
         }
     }
 
-    suspend fun restoreAutoWalksFromSupabase() {
-        Log.d("WalkRepository", "📥 Restoring auto walks from Supabase...")
-        val remoteSessions = supabaseRepository.fetchAllAutoWalkSessions()
-
-        if (remoteSessions.isEmpty()) {
-            Log.d("WalkRepository", "No auto walks in Supabase to restore")
-            return
-        }
-
-        val byDate = remoteSessions.groupBy { LocalDate.parse(it.walkDate) }
-
-        byDate.forEach { (date, sessions) ->
-            val qualifiedMinutes = sessions
-                .filter { it.isQualified }
-                .sumOf { it.durationMinutes }
-
-            val totalDistanceKm = Math.round(
-                sessions.sumOf { it.distanceKm } * 100.0
-            ) / 100.0
-
-            val isWalked = qualifiedMinutes >= 30
-
-            val segments = sessions.map { session ->
-                WalkSegment(
-                    durationMinutes = session.durationMinutes,
-                    isQualified     = session.isQualified,
-                    rejectReason    = session.rejectReason,
-                    stepCount       = session.stepCount,
-                    stepsPerMinute  = session.stepsPerMinute
-                )
-            }
-
-            val existing = walkDao.getWalkByDate(date)
-            if (existing == null || !existing.isManual) {
-                walkDao.upsertWalk(
-                    WalkEntity(
-                        date       = date,
-                        isWalked   = isWalked,
-                        distanceKm = totalDistanceKm,
-                        minutes    = qualifiedMinutes,
-                        isManual   = false,
-                        segments   = segments
-                    )
-                )
-            }
-        }
-
-        Log.d("WalkRepository", "✅ Restored ${byDate.size} days from Supabase auto walks")
-    }
+    // Stubbed — auto_walks table removed. Future: replace with full backup feature.
+    suspend fun restoreAutoWalksFromSupabase() {}
 }

@@ -230,7 +230,6 @@ class HomeViewModel @Inject constructor(
                 withContext(Dispatchers.IO) {
                     if (walkRepository.isSupabaseLoggedIn()) {
                         walkRepository.syncFromSupabase()
-                        walkRepository.restoreAutoWalksFromSupabase()
                         walkRepository.startSupabaseSync()
                     }
                     withTimeout(120_000) { autoSyncSteps() }
@@ -326,7 +325,6 @@ class HomeViewModel @Inject constructor(
             try {
                 walkRepository.syncPendingManualWalks()
                 walkRepository.syncFromSupabase()
-                walkRepository.restoreAutoWalksFromSupabase()
                 walkRepository.startSupabaseSync()
                 _refreshTrigger.value++
             } catch (e: Exception) {
